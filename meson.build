@@ -61,6 +61,7 @@ foreach u : [
   'renice',
   'paste', 'fold', 'expand', 'unexpand', 'comm',
   'find', 'du',
+  'tar',
   'awk',
   'sh',
 ]

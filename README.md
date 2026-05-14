@@ -41,11 +41,13 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `dd` | convert and copy files |
 | `df` | report filesystem disk space |
 | `dirname` | extract directory |
+| `du` | report disk usage |
 | `echo` | write arguments |
 | `env` | print environment |
 | `expand` | convert tabs to spaces |
 | `expr` | evaluate expressions |
 | `false` | exit with status 1 |
+| `find` | search for files in directory hierarchy |
 | `fold` | wrap lines at width |
 | `grep` | search files for patterns |
 | `head` | print first N lines |
@@ -97,7 +99,7 @@ The following POSIX utilities are not yet implemented:
 
 **Text processing:** (none remaining)
 
-**File operations:** `find`, `du`, `tar`, `pax`
+**File operations:** `tar`, `pax`
 
 **Diff/patch:** `diff`, `patch`
 

@@ -60,6 +60,7 @@ foreach u : [
   'sed',
   'renice',
   'paste', 'fold', 'expand', 'unexpand', 'comm',
+  'find', 'du',
   'awk',
   'sh',
 ]

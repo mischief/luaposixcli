@@ -1,155 +1,87 @@
 #!/bin/sh
 # SPDX-License-Identifier: ISC
-# mkinitramfs.sh - pack lua shell + utilities + deps into a bootable initramfs cpio
+# mkinitramfs.sh - build a minimal initramfs with lua + our utilities
 set -e
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
 
-mkdir -p "$ROOT"/{bin,lib64,lib/lua/5.4,share/lua/5.4,dev,proc,sys,tmp,etc}
+MIRROR="${MIRROR:-https://deb.debian.org/debian}"
+SUITE="${SUITE:-stable}"
 
-# Build the project
+# Packages we need (lua + deps only)
+INCLUDE="lua5.4,lua-posix,lua-lpeg,libc-bin"
+
+# Everything from minbase we DON'T need
+EXCLUDE="apt,base-files,base-passwd,bash,bsdutils,coreutils,dash,debconf"
+EXCLUDE="$EXCLUDE,debian-archive-keyring,debianutils,diffutils,dpkg,findutils"
+EXCLUDE="$EXCLUDE,grep,gzip,hostname,init-system-helpers,login,login.defs"
+EXCLUDE="$EXCLUDE,mawk,mount,ncurses-bin,openssl-provider-legacy,passwd"
+EXCLUDE="$EXCLUDE,perl-base,sed,sqv,sysvinit-utils,tar,tzdata"
+EXCLUDE="$EXCLUDE,usr-is-merged,util-linux,libpam-modules,libpam-modules-bin"
+EXCLUDE="$EXCLUDE,libpam-runtime,libpam0g,libsystemd0,libudev1"
+EXCLUDE="$EXCLUDE,libselinux1,libsemanage-common,libsemanage2,libsepol2"
+EXCLUDE="$EXCLUDE,libaudit-common,libaudit1,libseccomp2,libsqlite3-0"
+EXCLUDE="$EXCLUDE,libssl3t64,libstdc++6,libdebconfclient0,libdb5.3t64"
+EXCLUDE="$EXCLUDE,libgmp10,libhogweed6t64,libnettle8t64,liblastlog2-2"
+EXCLUDE="$EXCLUDE,libsmartcols1,ncurses-base,libxxhash0"
+
+echo "Running debootstrap (minimal lua environment)..."
+sudo debootstrap \
+	--variant=minbase \
+	--include="$INCLUDE" \
+	--exclude="$EXCLUDE" \
+	"$SUITE" "$ROOT" "$MIRROR" >/dev/null 2>&1 || {
+		echo "debootstrap failed, falling back to host-based method" >&2
+		exec "$SRC/mkinitramfs-host.sh" "$@"
+	}
+
+# Strip unnecessary files from the debootstrap result
+sudo rm -rf "$ROOT"/usr/share/{doc,man,info,lintian,locale,zoneinfo}
+sudo rm -rf "$ROOT"/var/{cache,log,lib/apt,lib/dpkg}
+sudo rm -rf "$ROOT"/usr/bin/{dpkg*,apt*,perl*}
+sudo rm -rf "$ROOT"/usr/sbin
+sudo rm -rf "$ROOT"/etc/apt
+
+# Build our project and install
 BUILDDIR=$(mktemp -d)
 meson setup "$BUILDDIR" "$SRC" >/dev/null 2>&1
 meson install -C "$BUILDDIR" --destdir "$ROOT" >/dev/null 2>&1
-# Move installed files to root layout
-if [ -d "$ROOT/usr/local/bin" ]; then
-	cp "$ROOT/usr/local/bin/"* "$ROOT/bin/"
-fi
-if [ -d "$ROOT/usr/local/lib64/lua/5.4" ]; then
-	cp "$ROOT/usr/local/lib64/lua/5.4/"* "$ROOT/lib/lua/5.4/"
-fi
-if [ -d "$ROOT/usr/local/lib/lua/5.4" ]; then
-	cp "$ROOT/usr/local/lib/lua/5.4/"* "$ROOT/lib/lua/5.4/"
-fi
-rm -rf "$ROOT/usr" "$BUILDDIR"
+rm -rf "$BUILDDIR"
 
-# Shell modules (sh/*.lua, excluding tests)
-mkdir -p "$ROOT/share/lua/5.4/sh"
-for f in "$SRC"/sh/*.lua; do
-	case "$f" in *_test.lua) continue;; esac
-	cp "$f" "$ROOT/share/lua/5.4/sh/"
-done
+# Shell modules
+sudo mkdir -p "$ROOT/usr/local/share/lua/5.4/sh" "$ROOT/usr/local/share/lua/5.4/awk"
+sudo cp "$SRC"/sh/*.lua "$ROOT/usr/local/share/lua/5.4/sh/" 2>/dev/null || true
+sudo cp "$SRC"/awk/lexer.lua "$SRC"/awk/parser.lua "$SRC"/awk/eval.lua "$ROOT/usr/local/share/lua/5.4/awk/" 2>/dev/null || true
 
-# lua5.4 binary
-cp /usr/bin/lua5.4 "$ROOT/bin/"
-
-# Dynamic linker
-cp /usr/lib64/ld-linux-x86-64.so.2 "$ROOT/lib64/"
-
-# Collect all shared library deps
-collect_libs() {
-	ldd "$1" 2>/dev/null | awk '/=>/{print $3}' | grep "^/"
-}
-
-# libs for lua5.4
-for lib in $(collect_libs /usr/bin/lua5.4); do
-	cp -L "$lib" "$ROOT/lib64/"
-done
-
-# luaposix .so modules
-mkdir -p "$ROOT/lib/lua/5.4/posix/sys"
-for f in $(find /usr/lib64/lua/5.4/posix -name '*.so'); do
-	rel=${f#/usr/lib64/lua/5.4/}
-	cp "$f" "$ROOT/lib/lua/5.4/$rel"
-	for lib in $(collect_libs "$f"); do
-		cp -nL "$lib" "$ROOT/lib64/" 2>/dev/null || true
-	done
-done
-
-# lpeg.so
-cp -L "$(eval $(luarocks path --lua-version 5.4 2>/dev/null); lua5.4 -e "print(package.searchpath('lpeg', package.cpath))")" "$ROOT/lib/lua/5.4/"
-
-# luaposix .lua modules
-cp -r /usr/share/lua/5.4/posix "$ROOT/share/lua/5.4/"
-
-# re.lua (lpeg companion)
-RE="$(eval $(luarocks path --lua-version 5.4 2>/dev/null); lua5.4 -e "print(package.searchpath('re', package.path))")"
-[ -f "$RE" ] && cp "$RE" "$ROOT/share/lua/5.4/"
-
-# /usr/bin/env wrapper (can't symlink to /bin/env - circular shebang)
-mkdir -p "$ROOT/usr/bin"
-cat > "$ROOT/usr/bin/env" << 'ENVEOF'
-#!/bin/lua5.4
-local unistd = require("posix.unistd")
--- skip env options, find command
-local i = 1
-while arg[i] and arg[i]:sub(1,1) == "-" do i = i + 1 end
-if not arg[i] then
-  for k, v in pairs(require("posix.stdlib").getenv()) do
-    io.write(k .. "=" .. v .. "\n")
-  end
-  os.exit(0)
-end
-local cmd = arg[i]
-local args = {[0] = cmd}
-for j = i + 1, #arg do args[#args+1] = arg[j] end
-unistd.execp(cmd, args)
-io.stderr:write("env: " .. cmd .. ": No such file or directory\n")
-os.exit(127)
-ENVEOF
-chmod 755 "$ROOT/usr/bin/env"
-ln -sf /bin/lua5.4 "$ROOT/usr/bin/lua5.4"
-
-# Remove libswmhack if it snuck in (LD_PRELOAD artifact)
-rm -f "$ROOT/lib64/libswmhack"*
-
-# Create /bin/sh wrapper that sets up paths and execs lua shell
-cat > "$ROOT/bin/sh" << 'EOF'
-#!/bin/lua5.4
-package.path = "/share/lua/5.4/?.lua;/share/lua/5.4/?/init.lua"
-package.cpath = "/lib/lua/5.4/?.so;/lib/lua/5.4/?/init.so"
-arg[0] = "/bin/sh"
-dofile("/share/lua/5.4/sh/sh.lua")
-EOF
-chmod 755 "$ROOT/bin/sh"
-
-# /init (PID 1) - lua script, no shell dependency
-cat > "$ROOT/init" << 'EOF'
-#!/bin/lua5.4
-local ok, err = pcall(function()
-  package.path = "/share/lua/5.4/?.lua;/share/lua/5.4/?/init.lua"
-  package.cpath = "/lib/lua/5.4/?.so;/lib/lua/5.4/?/init.so"
-  local stdlib = require("posix.stdlib")
-  local unistd = require("posix.unistd")
-  local fcntl = require("posix.fcntl")
-  -- ensure fds 0/1/2 all point to /dev/console
-  unistd.close(0)
-  unistd.close(1)
-  unistd.close(2)
-  fcntl.open("/dev/console", fcntl.O_RDWR) -- fd 0
-  unistd.dup(0) -- fd 1
-  unistd.dup(0) -- fd 2
-  stdlib.setenv("PATH", "/bin")
-  stdlib.setenv("LUA_PATH", "/share/lua/5.4/?.lua;/share/lua/5.4/?/init.lua")
-  stdlib.setenv("LUA_CPATH", "/lib/lua/5.4/?.so;/lib/lua/5.4/?/init.so")
+# Create /init
+sudo tee "$ROOT/init" > /dev/null << 'EOF'
+#!/usr/bin/lua5.4
+package.path = "/usr/local/share/lua/5.4/?.lua;/usr/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?/init.lua;/usr/share/lua/5.4/?/init.lua"
+package.cpath = "/usr/local/lib/lua/5.4/?.so;/usr/lib/x86_64-linux-gnu/lua/5.4/?.so;/usr/local/lib/x86_64-linux-gnu/lua/5.4/?.so"
+local ok, stdlib = pcall(require, "posix.stdlib")
+if ok then
+  stdlib.setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
+  stdlib.setenv("LUA_PATH", package.path)
+  stdlib.setenv("LUA_CPATH", package.cpath)
   stdlib.setenv("HOME", "/tmp")
   stdlib.setenv("TERM", "linux")
-  unistd.write(1, "luaposixcli initramfs\n")
-  arg = {[0] = "/bin/sh"}
-  dofile("/share/lua/5.4/sh/sh.lua")
-end)
-if not ok then
-  io.stderr:write("INIT ERROR: " .. tostring(err) .. "\n")
-  while true do require("posix.unistd").sleep(9999) end
 end
+io.write("luaposixcli initramfs (debootstrap)\n")
+io.flush()
+arg = {[0] = "/usr/local/bin/sh"}
+dofile("/usr/local/share/lua/5.4/sh/sh.lua")
 EOF
-chmod 755 "$ROOT/init"
+sudo chmod 755 "$ROOT/init"
 
-# /etc/profile - mount filesystems on first shell start
-cat > "$ROOT/etc/profile" << 'EOF'
-mount -t proc proc /proc 2>/dev/null
-mount -t sysfs sys /sys 2>/dev/null
-mount -t devtmpfs dev /dev 2>/dev/null
-EOF
-
-# /etc/passwd for id(1) etc
-echo "root:x:0:0:root:/tmp:/bin/sh" > "$ROOT/etc/passwd"
-echo "root:x:0:" > "$ROOT/etc/group"
+# Ensure /dev /proc /sys /tmp exist
+sudo mkdir -p "$ROOT"/{dev,proc,sys,tmp,etc}
+echo "root:x:0:0:root:/tmp:/bin/sh" | sudo tee "$ROOT/etc/passwd" > /dev/null
+echo "root:x:0:" | sudo tee "$ROOT/etc/group" > /dev/null
 
 # Build cpio
 OUT="${1:-$SRC/initramfs.cpio.gz}"
-(cd "$ROOT" && find . | cpio -o -H newc --quiet | gzip -9) > "$OUT"
+(cd "$ROOT" && sudo find . | sudo cpio -o -H newc --quiet | gzip -9) > "$OUT"
 
 echo "initramfs: $OUT ($(du -h "$OUT" | cut -f1))"

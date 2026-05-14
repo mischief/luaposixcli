@@ -28,6 +28,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 |---------|-------------|
 | `basename` | strip directory and suffix |
 | `awk` | pattern scanning and processing language |
+| `bc` | arbitrary-precision arithmetic language |
 | `cal` | display calendar |
 | `cat` | concatenate files |
 | `chgrp` | change file group |
@@ -109,7 +110,7 @@ The following POSIX utilities are not yet implemented:
 
 **Build tools:** `make`, `m4`, `lex`, `yacc`, `c99`
 
-**Other:** `bc`, `read`, `getopts`
+**Other:** `read`, `getopts`
 
 ## Architecture
 

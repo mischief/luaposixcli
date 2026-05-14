@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: ISC
 -- sh/expand.lua: word expansion (variable + command substitution)
 local lpeg = require("lpeg")
-local P, C, Ct, Cmt = lpeg.P, lpeg.C, lpeg.Ct, lpeg.Cmt
+local P, S, C, Ct, Cmt = lpeg.P, lpeg.S, lpeg.C, lpeg.Ct, lpeg.Cmt
 
 local env = require("sh.env")
 
@@ -105,8 +105,9 @@ local dollar_exp =
 -- single-quoted: literal (no expansion)
 local sq_lit = P("'") * C((1 - P("'")) ^ 0) * P("'")
 
--- double-quoted: expand $(...) and $VAR inside
-local dq_piece = cmdsub_pat + dollar_exp + C(1 - P('"'))
+-- double-quoted: expand $(...) and $VAR inside, handle \" \\ \$ \` escapes
+local dq_escape = P("\\") * C(S('"\\$`')) + P("\\") * C(P(1)) / "\\%1"
+local dq_piece = cmdsub_pat + dollar_exp + dq_escape + C(1 - P('"') - P("\\"))
 local dq_lit = P('"') * Ct(dq_piece ^ 0) * P('"') / table.concat
 
 -- unquoted piece

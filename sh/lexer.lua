@@ -1,17 +1,30 @@
 -- SPDX-License-Identifier: ISC
 -- sh/lexer.lua: tokenize a shell command line into words and operators
 local lpeg = require("lpeg")
-local P, S, C, Ct = lpeg.P, lpeg.S, lpeg.C, lpeg.Ct
+local P, S, C, Ct, Cmt = lpeg.P, lpeg.S, lpeg.C, lpeg.Ct, lpeg.Cmt
 
 local blank = S(" \t")
 local newline = P("\n")
 local comment = P("#") * (1 - newline) ^ 0
 
--- single-quoted: literal content, no escapes
-local sq = P("'") * C((1 - P("'")) ^ 0) * P("'")
+-- single-quoted: literal content, no escapes. Preserve quotes for expand phase.
+local sq = C(P("'") * (1 - P("'")) ^ 0 * P("'"))
 
--- double-quoted: literal for now (no expansion in this phase)
-local dq = P('"') * C((1 - P('"')) ^ 0) * P('"')
+-- double-quoted: find matching close quote, respecting \" escapes
+-- Captures the full "..." including quotes for the expand phase
+local dq = Cmt(P('"'), function(s, p)
+	local i = p
+	while i <= #s do
+		local c = s:sub(i, i)
+		if c == '"' then return i + 1, s:sub(p - 1, i) end
+		if c == "\\" and i + 1 <= #s then
+			i = i + 2 -- skip escaped char
+		else
+			i = i + 1
+		end
+	end
+	return nil -- unterminated
+end)
 
 -- backslash escape: consume backslash, capture next char literally
 local escape = P("\\") * C(P(1))
@@ -20,7 +33,6 @@ local escape = P("\\") * C(P(1))
 local wordchar = 1 - S(" \t\n\"'\\#|&;$<>`")
 
 -- $(...) command substitution: capture the whole $(...) including delimiters as literal text
-local Cmt = lpeg.Cmt
 local cmdsub = Cmt(P("$"), function(s, p)
 	if s:sub(p, p) ~= "(" then
 		return nil

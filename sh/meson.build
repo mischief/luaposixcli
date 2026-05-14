@@ -46,11 +46,13 @@ test('sh.redir', busted,
 test('sh.compound', busted,
   args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_test.lua'],
   workdir: meson.project_source_root(),
+  timeout: 10,
 )
 
 test('sh.compound_multiline', busted,
   args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_multiline_test.lua'],
   workdir: meson.project_source_root(),
+  timeout: 10,
 )
 
 test('sh', sh_prog, args: [meson.current_source_dir() / 'test.sh'])

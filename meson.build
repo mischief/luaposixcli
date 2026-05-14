@@ -62,6 +62,7 @@ foreach u : [
   'paste', 'fold', 'expand', 'unexpand', 'comm',
   'find', 'du',
   'tar', 'bc',
+  'diff', 'patch',
   'awk',
   'sh',
 ]

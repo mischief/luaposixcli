@@ -41,6 +41,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `date` | display date and time |
 | `dd` | convert and copy files |
 | `df` | report filesystem disk space |
+| `diff` | compare files line by line |
 | `dirname` | extract directory |
 | `du` | report disk usage |
 | `echo` | write arguments |
@@ -67,6 +68,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `nohup` | run immune to hangups |
 | `od` | octal dump |
 | `paste` | merge lines from files |
+| `patch` | apply diff patches |
 | `pax` | portable archive exchange |
 | `pr` | paginate files |
 | `printf` | format and print |
@@ -104,7 +106,7 @@ The following POSIX utilities are not yet implemented:
 
 **File operations:** (none remaining)
 
-**Diff/patch:** `diff`, `patch`
+**Diff/patch:** (none remaining)
 
 **Editors:** `vi`, `ed`, `ex`
 

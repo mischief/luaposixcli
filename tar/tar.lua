@@ -149,25 +149,85 @@ elseif mode == "extract" then
 		unistd.write(2, "tar: cannot open " .. archive .. "\n")
 		os.exit(1)
 	end
+
+	-- Sanitize a path: reject absolute paths and components that escape via ..
+	local function safe_path(name)
+		-- Strip leading /
+		name = name:gsub("^/+", "")
+		-- Reject empty
+		if name == "" then return nil end
+		-- Check each component for ..
+		for comp in name:gmatch("[^/]+") do
+			if comp == ".." then return nil end
+		end
+		return name
+	end
+
+	-- Check that a path doesn't traverse through a symlink to escape.
+	-- Resolves each parent component and ensures it stays under cwd.
+	local function check_no_symlink_escape(name)
+		local parts = {}
+		for comp in name:gmatch("[^/]+") do parts[#parts + 1] = comp end
+		-- Check each prefix directory
+		local path = ""
+		for i = 1, #parts - 1 do
+			path = path == "" and parts[i] or path .. "/" .. parts[i]
+			local s = stat.lstat(path)
+			if s and stat.S_ISLNK(s.st_mode) ~= 0 then
+				-- A parent component is a symlink - refuse extraction
+				return false
+			end
+		end
+		return true
+	end
+
 	while true do
 		local hdr, data = format.read_entry(fd)
 		if not hdr then break end
-		if verbose then unistd.write(2, hdr.name .. "\n") end
 
-		if hdr.typeflag == "5" then
-			-- Directory
-			stat.mkdir(hdr.name, hdr.mode | 0x1C0) -- ensure rwx for owner
-		elseif hdr.typeflag == "2" then
-			-- Symlink
-			unistd.link(hdr.linkname, hdr.name, true)
-		elseif hdr.typeflag == "0" or hdr.typeflag == "" then
-			-- Regular file: ensure parent directory exists
-			local dir = hdr.name:match("(.+)/")
-			if dir then stat.mkdir(dir, 493) end -- best effort
-			local wfd = fcntl.open(hdr.name, fcntl.O_WRONLY + fcntl.O_CREAT + fcntl.O_TRUNC, hdr.mode)
-			if wfd then
-				if #data > 0 then unistd.write(wfd, data) end
-				unistd.close(wfd)
+		local name = safe_path(hdr.name)
+		if not name then
+			unistd.write(2, "tar: skipping unsafe path: " .. hdr.name .. "\n")
+		else
+			if verbose then unistd.write(2, name .. "\n") end
+
+			if hdr.typeflag == "5" then
+				stat.mkdir(name, hdr.mode | 0x1C0)
+			elseif hdr.typeflag == "2" then
+				-- Symlink: check that resolved target doesn't escape extraction root
+				local target = hdr.linkname
+				if target:sub(1, 1) == "/" then
+					unistd.write(2, "tar: skipping unsafe symlink: " .. name .. " -> " .. target .. "\n")
+				else
+					-- Resolve target relative to link's parent directory
+					local link_dir = name:match("(.+)/") or ""
+					local parts = {}
+					for comp in (link_dir .. "/" .. target):gmatch("[^/]+") do
+						if comp == ".." then
+							if #parts == 0 then parts = nil; break end
+							parts[#parts] = nil
+						elseif comp ~= "." then
+							parts[#parts + 1] = comp
+						end
+					end
+					if not parts then
+						unistd.write(2, "tar: skipping unsafe symlink: " .. name .. " -> " .. target .. "\n")
+					else
+						unistd.link(target, name, true)
+					end
+				end
+			elseif hdr.typeflag == "0" or hdr.typeflag == "" then
+				if not check_no_symlink_escape(name) then
+					unistd.write(2, "tar: skipping (symlink in path): " .. name .. "\n")
+				else
+					local dir = name:match("(.+)/")
+					if dir then stat.mkdir(dir, 493) end
+					local wfd = fcntl.open(name, fcntl.O_WRONLY + fcntl.O_CREAT + fcntl.O_TRUNC, hdr.mode)
+					if wfd then
+						if #data > 0 then unistd.write(wfd, data) end
+						unistd.close(wfd)
+					end
+				end
 			end
 		end
 	end

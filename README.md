@@ -27,12 +27,14 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | Utility | Description |
 |---------|-------------|
 | `basename` | strip directory and suffix |
+| `awk` | pattern scanning and processing language |
 | `cal` | display calendar |
 | `cat` | concatenate files |
 | `chgrp` | change file group |
 | `chmod` | change file mode |
 | `chown` | change file owner |
 | `cmp` | compare two files |
+| `comm` | compare sorted files |
 | `cp` | copy files |
 | `cut` | extract fields/columns |
 | `date` | display date and time |
@@ -41,8 +43,10 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `dirname` | extract directory |
 | `echo` | write arguments |
 | `env` | print environment |
+| `expand` | convert tabs to spaces |
 | `expr` | evaluate expressions |
 | `false` | exit with status 1 |
+| `fold` | wrap lines at width |
 | `grep` | search files for patterns |
 | `head` | print first N lines |
 | `id` | print user/group IDs |
@@ -59,6 +63,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `nice` | run with altered priority |
 | `nohup` | run immune to hangups |
 | `od` | octal dump |
+| `paste` | merge lines from files |
 | `pr` | paginate files |
 | `printf` | format and print |
 | `ps` | report process status |
@@ -80,6 +85,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `tty` | print terminal name |
 | `uname` | print system information |
 | `uniq` | filter duplicate lines |
+| `unexpand` | convert spaces to tabs |
 | `unlink` | remove a file |
 | `wc` | count lines, words, bytes |
 | `xargs` | build command lines from stdin |
@@ -89,7 +95,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 
 The following POSIX utilities are not yet implemented:
 
-**Text processing:** `awk`, `paste`, `fold`, `expand`, `unexpand`, `comm`
+**Text processing:** (none remaining)
 
 **File operations:** `find`, `du`, `tar`, `pax`
 

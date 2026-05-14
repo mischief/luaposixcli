@@ -54,6 +54,7 @@ foreach u : [
   'sed',
   'renice',
   'paste', 'fold', 'expand', 'unexpand', 'comm',
+  'awk',
   'sh',
 ]
   subdir(u)

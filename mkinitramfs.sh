@@ -4,7 +4,9 @@
 set -e
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
-ROOT=$(mktemp -d)
+ROOT="$SRC/.rootfs"
+rm -rf "$ROOT"
+mkdir -p "$ROOT"
 trap 'rm -rf "$ROOT"' EXIT
 
 MIRROR="${MIRROR:-https://deb.debian.org/debian}"
@@ -32,7 +34,7 @@ sudo debootstrap \
 	--variant=minbase \
 	--include="$INCLUDE" \
 	--exclude="$EXCLUDE" \
-	"$SUITE" "$ROOT" "$MIRROR" >/dev/null 2>&1 || {
+	"$SUITE" "$ROOT" "$MIRROR" || {
 		echo "debootstrap failed, falling back to host-based method" >&2
 		exec "$SRC/mkinitramfs-host.sh" "$@"
 	}

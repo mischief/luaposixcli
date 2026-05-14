@@ -53,6 +53,7 @@ foreach u : [
   'grep',
   'sed',
   'renice',
+  'paste', 'fold', 'expand', 'unexpand', 'comm',
   'sh',
 ]
   subdir(u)

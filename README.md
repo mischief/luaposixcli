@@ -66,6 +66,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `nohup` | run immune to hangups |
 | `od` | octal dump |
 | `paste` | merge lines from files |
+| `pax` | portable archive exchange |
 | `pr` | paginate files |
 | `printf` | format and print |
 | `ps` | report process status |
@@ -80,6 +81,7 @@ See [sh/README.md](sh/README.md) for the shell's feature list.
 | `sort` | sort lines |
 | `tail` | print last N lines |
 | `tee` | copy stdin to stdout and files |
+| `tar` | tape archive (create, extract, list) |
 | `time` | measure command duration |
 | `touch` | create file / update timestamps |
 | `tr` | translate characters |
@@ -99,7 +101,7 @@ The following POSIX utilities are not yet implemented:
 
 **Text processing:** (none remaining)
 
-**File operations:** `tar`, `pax`
+**File operations:** (none remaining)
 
 **Diff/patch:** `diff`, `patch`
 

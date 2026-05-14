@@ -8,6 +8,12 @@ install_data('tar.lua',
   install_mode: 'rwxr-xr-x',
 )
 
+install_data('pax.lua',
+  rename: 'pax',
+  install_dir: get_option('bindir'),
+  install_mode: 'rwxr-xr-x',
+)
+
 install_data('format.lua',
   install_dir: lua_mod_dir / 'tar',
 )

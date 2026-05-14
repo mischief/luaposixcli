@@ -1,0 +1,140 @@
+-- SPDX-License-Identifier: ISC
+-- sh/expand.lua: word expansion (variable + command substitution)
+local lpeg = require("lpeg")
+local P, C, Ct, Cmt = lpeg.P, lpeg.C, lpeg.Ct, lpeg.Cmt
+
+local env = require("sh.env")
+
+local special = lpeg.S("?$!-@*#0")
+local namechar = lpeg.R("az", "AZ", "09") + P("_")
+local namefirst = lpeg.R("az", "AZ") + P("_")
+local varname = namefirst * namechar ^ 0
+
+local function lookup(name)
+	return env.get(name) or ""
+end
+
+-- find the shell path for command substitution
+local sh_path
+
+local function set_sh_path(path)
+	sh_path = path
+end
+
+local unistd = require("posix.unistd")
+local wait = require("posix.sys.wait")
+
+-- callback to execute a command string in the current shell
+-- set by sh.lua at startup via set_run_fn
+local run_fn = nil
+
+local function set_run_fn(fn)
+	run_fn = fn
+end
+
+local function cmdsub(cmd)
+	local r, w = unistd.pipe()
+	local pid = unistd.fork()
+	if pid == 0 then
+		-- child (subshell): redirect stdout to pipe, run command, exit
+		unistd.close(r)
+		unistd.dup2(w, 1)
+		unistd.close(w)
+		if run_fn then
+			run_fn(cmd)
+		end
+		os.exit(tonumber(env.get("?")) or 0)
+	end
+	-- parent: read from pipe
+	unistd.close(w)
+	local chunks = {}
+	while true do
+		local data = unistd.read(r, 4096)
+		if not data or data == "" then
+			break
+		end
+		chunks[#chunks + 1] = data
+	end
+	unistd.close(r)
+	wait.wait(pid)
+	local out = table.concat(chunks)
+	-- strip trailing newlines per POSIX
+	return (out:gsub("\n+$", ""))
+end
+
+-- match $(...) using Cmt with a P("$") guard so it never matches empty
+local cmdsub_pat = Cmt(P("$"), function(s, p)
+	-- p is after the "$", check for "("
+	if s:sub(p, p) ~= "(" then
+		return nil
+	end
+	local depth = 0
+	local i = p -- at the '('
+	while i <= #s do
+		local c = s:sub(i, i)
+		if c == "(" then
+			depth = depth + 1
+		elseif c == ")" then
+			depth = depth - 1
+			if depth == 0 then
+				local inner = s:sub(p + 1, i - 1)
+				return i + 1, cmdsub(inner)
+			end
+		end
+		i = i + 1
+	end
+	return nil
+end)
+
+-- We need to try cmdsub before dollar_exp since both start with $
+-- Rebuild patterns with cmdsub support
+
+-- ${#var} string length
+local function lookup_length(name)
+	local val = env.get(name) or ""
+	return tostring(#val)
+end
+
+-- $VAR, ${VAR}, ${#VAR}, $? etc.
+local dollar_exp =
+	(P("${#") * C(varname) * P("}")) / lookup_length +
+	(P("${") * C(varname + special) * P("}")) / lookup +
+	(P("$") * C(special)) / lookup +
+	(P("$") * C(varname)) / lookup
+
+-- single-quoted: literal (no expansion)
+local sq_lit = P("'") * C((1 - P("'")) ^ 0) * P("'")
+
+-- double-quoted: expand $(...) and $VAR inside
+local dq_piece = cmdsub_pat + dollar_exp + C(1 - P('"'))
+local dq_lit = P('"') * Ct(dq_piece ^ 0) * P('"') / table.concat
+
+-- unquoted piece
+local unquoted = cmdsub_pat + dollar_exp + C(1 - lpeg.S("'\""))
+
+-- full word
+local word_pat = Ct((sq_lit + dq_lit + unquoted) ^ 0) / table.concat
+
+local function word(s)
+	return lpeg.match(word_pat, s) or s
+end
+
+-- detect NAME=value
+local assign_pat = C(namefirst * namechar ^ 0) * P("=") * C(P(1) ^ 0)
+
+local function is_assignment(s)
+	return lpeg.match(assign_pat, s) ~= nil
+end
+
+local function parse_assignment(s)
+	local name, val = lpeg.match(assign_pat, s)
+	return name, val
+end
+
+return {
+	word = word,
+	is_assignment = is_assignment,
+	parse_assignment = parse_assignment,
+	set_sh_path = set_sh_path,
+	set_run_fn = set_run_fn,
+}

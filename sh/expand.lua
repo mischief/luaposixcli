@@ -132,8 +132,57 @@ local function parse_assignment(s)
 	return name, val
 end
 
+-- Check if a raw token (before quote removal) contains unquoted glob metacharacters
+local glob_meta = S("*?[")
+local function has_unquoted_glob(s)
+	local i = 1
+	while i <= #s do
+		local c = s:sub(i, i)
+		if c == "'" then
+			-- skip single-quoted section
+			local j = s:find("'", i + 1, true)
+			if j then i = j + 1 else i = i + 1 end
+		elseif c == '"' then
+			-- skip double-quoted section (respecting \")
+			i = i + 1
+			while i <= #s do
+				local dc = s:sub(i, i)
+				if dc == '"' then i = i + 1; break end
+				if dc == "\\" then i = i + 2 else i = i + 1 end
+			end
+		elseif c == "\\" then
+			i = i + 2 -- escaped char, skip
+		elseif c == "*" or c == "?" or c == "[" then
+			return true
+		else
+			i = i + 1
+		end
+	end
+	return false
+end
+
+-- Expand a word with variable/command substitution, then glob-expand if applicable.
+-- Returns a list of words (may be more than one if glob matches).
+local posix_glob = require("posix.glob")
+local function glob_word(s)
+	if not has_unquoted_glob(s) then
+		return { word(s) }
+	end
+	-- Expand variables first, but preserve glob chars
+	local expanded = word(s)
+	-- Try glob
+	local matches = posix_glob.glob(expanded, 0)
+	if matches then
+		table.sort(matches)
+		return matches
+	end
+	-- No matches: return literal (POSIX behavior)
+	return { expanded }
+end
+
 return {
 	word = word,
+	glob_word = glob_word,
 	is_assignment = is_assignment,
 	parse_assignment = parse_assignment,
 	set_sh_path = set_sh_path,

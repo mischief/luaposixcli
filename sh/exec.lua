@@ -271,10 +271,13 @@ local function expand_segment(args)
 		assignments[#assignments + 1] = args[i]
 		i = i + 1
 	end
-	-- expand remaining words
+	-- expand remaining words (with glob expansion)
 	local expanded = {}
 	for j = i, #args do
-		expanded[#expanded + 1] = expand.word(args[j])
+		local words = expand.glob_word(args[j])
+		for _, w in ipairs(words) do
+			expanded[#expanded + 1] = w
+		end
 	end
 	-- parse redirections from expanded args
 	local clean, redirs = parse_redirections(expanded)

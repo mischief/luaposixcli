@@ -2,7 +2,8 @@
 -- SPDX-License-Identifier: ISC
 local a = arg or { [0] = "sh" }
 local src = a[0]:match("(.+/)") or "./"
-package.path = src .. "../?.lua;" .. package.path
+local prefix = src .. "../"
+package.path = prefix .. "?.lua;" .. prefix .. "share/lua/5.4/?.lua;" .. package.path
 
 local unistd = require("posix.unistd")
 local fcntl = require("posix.fcntl")

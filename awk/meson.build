@@ -7,4 +7,9 @@ install_data('awk.lua',
   install_mode: 'rwxr-xr-x',
 )
 
+install_data(
+  'lexer.lua', 'parser.lua', 'eval.lua',
+  install_dir: get_option('datadir') / 'lua' / '5.4' / 'awk',
+)
+
 test('awk', sh, args: [meson.current_source_dir() / 'test.sh'])

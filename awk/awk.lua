@@ -2,9 +2,9 @@
 -- SPDX-License-Identifier: ISC
 -- awk/awk.lua - POSIX awk main driver
 local src_dir = (arg[0]:match("(.+/)") or "./") .. "../"
-package.path = src_dir .. "?.lua;" .. package.path
+package.path = src_dir .. "?.lua;" .. src_dir .. "share/lua/5.4/?.lua;" .. package.path
 if not package.cpath:find("build") then
-	package.cpath = src_dir .. "build/?.so;" .. package.cpath
+	package.cpath = src_dir .. "build/?.so;" .. src_dir .. "lib/lua/5.4/?.so;" .. package.cpath
 end
 
 local unistd = require("posix.unistd")

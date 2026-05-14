@@ -8,6 +8,11 @@ install_data('sh.lua',
   install_mode: 'rwxr-xr-x',
 )
 
+install_data(
+  'lexer.lua', 'exec.lua', 'env.lua', 'expand.lua', 'compound.lua', 'test.lua',
+  install_dir: get_option('datadir') / 'lua' / '5.4' / 'sh',
+)
+
 test('sh.lexer', busted,
   args: ['--lua=lua5.4', meson.current_source_dir() / 'lexer_test.lua'],
   workdir: meson.project_source_root(),

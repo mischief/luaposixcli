@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: ISC
 project('lua-os-utils', 'c', meson_version: '>=1.0')
 
+lua_name = get_option('lua')
+lua_ver = lua_name.replace('lua', '')
+lua_mod_dir = get_option('datadir') / 'lua' / lua_ver
+lua_lib_dir = get_option('libdir') / 'lua' / lua_ver
+
 stylua = find_program('stylua', required: false)
 if stylua.found()
   run_target('format',
@@ -8,22 +13,23 @@ if stylua.found()
   )
 endif
 
-lua54 = dependency('lua5.4', required: false)
-if not lua54.found()
-  lua54 = dependency('lua')
+lua_dep = dependency(lua_name, required: false)
+if not lua_dep.found()
+  lua_dep = dependency('lua')
 endif
 
 shared_library('notposix',
   'notposix.c',
   name_prefix: '',
-  dependencies: [lua54],
+  dependencies: [lua_dep],
   install: true,
-  install_dir: get_option('libdir') / 'lua' / '5.4',
+  install_dir: lua_lib_dir,
 )
 
+lua_prog = find_program(lua_name)
 busted = find_program('busted')
 test('notposix', busted,
-  args: ['--lua=lua5.4', '--cpath=' + meson.project_build_root() / '?.so',
+  args: ['--lua=' + lua_name, '--cpath=' + meson.project_build_root() / '?.so',
          meson.current_source_dir() / 'notposix_test.lua'],
   workdir: meson.project_source_root(),
 )

@@ -9,7 +9,7 @@ install_data('awk.lua',
 
 install_data(
   'lexer.lua', 'parser.lua', 'eval.lua',
-  install_dir: get_option('datadir') / 'lua' / '5.4' / 'awk',
+  install_dir: lua_mod_dir / 'awk',
 )
 
 test('awk', sh, args: [meson.current_source_dir() / 'test.sh'])

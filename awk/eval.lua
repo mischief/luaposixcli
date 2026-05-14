@@ -349,19 +349,19 @@ function M:eval_binary(node, locals)
 		return (M.is_true(self:eval_expr(node.left, locals)) or M.is_true(self:eval_expr(node.right, locals))) and 1 or 0
 	end
 
-	local lv = self:eval_expr(node.left, locals)
-	local rv = self:eval_expr(node.right, locals)
-
-	-- Regex match
+	-- Regex match: get pattern from raw node (ERE nodes must not be evaluated as expressions)
 	if op == "~" then
-		local s = M.to_string(self, lv)
-		local pat = M.to_string(self, rv)
+		local s = M.to_string(self, self:eval_expr(node.left, locals))
+		local pat = self:get_pat(node.right, locals)
 		return self:regex_find(s, pat) and 1 or 0
 	elseif op == "!~" then
-		local s = M.to_string(self, lv)
-		local pat = M.to_string(self, rv)
+		local s = M.to_string(self, self:eval_expr(node.left, locals))
+		local pat = self:get_pat(node.right, locals)
 		return self:regex_find(s, pat) and 0 or 1
 	end
+
+	local lv = self:eval_expr(node.left, locals)
+	local rv = self:eval_expr(node.right, locals)
 
 	-- Comparison: numeric if both numeric or numeric strings
 	if op == "<" or op == "<=" or op == "==" or op == "!=" or op == ">=" or op == ">" then

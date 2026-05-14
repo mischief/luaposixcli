@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: ISC
 return {
-  include = { "sh/" },
+  include = { "sh/", "awk/" },
   statsfile = "luacov.stats.out",
   reportfile = "luacov.report.out",
 }

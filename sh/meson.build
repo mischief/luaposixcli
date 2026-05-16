@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: ISC
 busted = find_program('busted')
-sh_prog = find_program('sh')
 
 install_data('sh.lua',
   rename: 'sh',
@@ -55,4 +54,4 @@ test('sh.compound_multiline', busted,
   timeout: 10,
 )
 
-test('sh', sh_prog, args: [meson.current_source_dir() / 'test.sh'])
+test('sh', sh, args: [meson.current_source_dir() / 'test.sh'])

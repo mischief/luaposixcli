@@ -34,6 +34,8 @@ test('notposix', busted,
   workdir: meson.project_source_root(),
 )
 
+sh = find_program('sh')
+
 foreach u : [
   'true', 'false', 'echo', 'cat', 'pwd',
   'yes', 'tee', 'wc', 'head', 'tail',

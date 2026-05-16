@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: ISC
-sh = find_program('sh')
 
 install_data('ps.lua',
   rename: 'ps',

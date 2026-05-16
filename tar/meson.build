@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: ISC
-sh = find_program('sh')
 busted = find_program('busted')
 
 install_data('tar.lua',

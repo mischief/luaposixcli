@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: ISC
-sh = find_program('sh')
 
 install_data('rmdir.lua',
   rename: 'rmdir',

@@ -27,8 +27,9 @@ describe("sh.env", function()
 		end)
 
 		it("unexported variable is not exported", function()
-			env.set("FOO", "bar")
-			assert.is_false(env.is_exported("FOO"))
+			local name = "_SH_TEST_" .. tostring(math.random(100000, 999999))
+			env.set(name, "bar")
+			assert.is_false(env.is_exported(name))
 		end)
 
 		it("unset also clears export flag", function()

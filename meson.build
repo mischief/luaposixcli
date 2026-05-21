@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: ISC
-project('lua-os-utils', 'c', meson_version: '>=1.0')
+project('lua-os-utils', 'c', meson_version: '>=1.1')
 
 lua_name = get_option('lua')
 lua_ver = lua_name.replace('lua', '')
@@ -18,7 +18,7 @@ if not lua_dep.found()
   lua_dep = dependency('lua')
 endif
 
-shared_library('notposix',
+notposix_lib = shared_library('notposix',
   'notposix.c',
   name_prefix: '',
   dependencies: [lua_dep],
@@ -32,6 +32,7 @@ test('notposix', busted,
   args: ['--lua=' + lua_name, '--cpath=' + meson.project_build_root() / '?.so',
          meson.current_source_dir() / 'notposix_test.lua'],
   workdir: meson.project_source_root(),
+  depends: notposix_lib,
 )
 
 sh = find_program('sh')
@@ -67,6 +68,7 @@ foreach u : [
   'diff', 'patch',
   'awk',
   'sh',
+  'make',
 ]
   subdir(u)
 endforeach

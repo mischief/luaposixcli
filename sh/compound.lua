@@ -17,6 +17,7 @@ function M.is_compound(tokens)
 	end
 	local first = tokens[1]
 	return first == "if" or first == "while" or first == "until" or first == "for"
+		or first == "(" or first == "{" or first == "case"
 end
 
 -- Find matching terminator, respecting nesting of ALL compound commands
@@ -302,6 +303,42 @@ local function exec_for(tokens)
 	end
 end
 
+-- Shell pattern matching for case statements (* ? [...])
+function M.case_match(str, pattern)
+	-- Convert shell pattern to Lua pattern
+	if pattern == "*" then return true end
+	local lua_pat = "^"
+	local i = 1
+	while i <= #pattern do
+		local c = pattern:sub(i, i)
+		if c == "*" then
+			lua_pat = lua_pat .. ".*"
+		elseif c == "?" then
+			lua_pat = lua_pat .. "."
+		elseif c == "[" then
+			local j = i + 1
+			local neg = ""
+			if j <= #pattern and pattern:sub(j, j) == "!" then
+				neg = "^"; j = j + 1
+			end
+			local bracket = ""
+			while j <= #pattern and pattern:sub(j, j) ~= "]" do
+				bracket = bracket .. pattern:sub(j, j)
+				j = j + 1
+			end
+			lua_pat = lua_pat .. "[" .. neg .. bracket .. "]"
+			i = j
+		elseif c:find("[%.%+%-%^%$%(%)%%]") then
+			lua_pat = lua_pat .. "%" .. c
+		else
+			lua_pat = lua_pat .. c
+		end
+		i = i + 1
+	end
+	lua_pat = lua_pat .. "$"
+	return str:find(lua_pat) ~= nil
+end
+
 -- Execute a compound command from a flat token list
 -- Returns true if it handled a compound command, false otherwise
 function M.try_execute(tokens)
@@ -356,6 +393,109 @@ function M.try_execute(tokens)
 			inner[#inner + 1] = tokens[i]
 		end
 		exec_for(inner)
+		return true
+	elseif first == "case" then
+		-- case WORD in pattern) commands;; ... esac
+		-- Find esac
+		local esac_idx
+		local depth = 0
+		for i = 1, #tokens do
+			if tokens[i] == "case" then depth = depth + 1
+			elseif tokens[i] == "esac" then
+				depth = depth - 1
+				if depth == 0 then esac_idx = i; break end
+			end
+		end
+		if not esac_idx then return false end
+		-- tokens[2] = word, tokens[3] should be "in"
+		local expand = require("sh.expand")
+		local env = require("sh.env")
+		local word = expand.word(tokens[2])
+		-- Parse clauses between "in" and "esac"
+		-- Each clause: pattern [| pattern]... ) commands ;;
+		local i = 4 -- skip "case WORD in"
+		if tokens[3] == "in" then i = 4
+		else i = 3 end
+		local matched = false
+		while i < esac_idx and not matched do
+			-- Collect patterns until )
+			local patterns = {}
+			while i < esac_idx and tokens[i] ~= ")" do
+				if tokens[i] ~= "|" and tokens[i] ~= "(" then
+					patterns[#patterns + 1] = tokens[i]
+				end
+				i = i + 1
+			end
+			i = i + 1 -- skip )
+			-- Collect commands until ;; or esac
+			local cmd_tokens = {}
+			while i < esac_idx and tokens[i] ~= ";;" do
+				cmd_tokens[#cmd_tokens + 1] = tokens[i]
+				i = i + 1
+			end
+			if tokens[i] == ";;" then i = i + 1 end
+			-- Check if word matches any pattern
+			for _, pat in ipairs(patterns) do
+				local epat = expand.word(pat)
+				if M.case_match(word, epat) then
+					matched = true
+					if #cmd_tokens > 0 then
+						run_cmd(tokens_to_string(cmd_tokens))
+					end
+					break
+				end
+			end
+		end
+		return true
+	elseif first == "(" then
+		-- Subshell: find matching )
+		local depth = 0
+		local close_idx
+		for i = 1, #tokens do
+			if tokens[i] == "(" then depth = depth + 1
+			elseif tokens[i] == ")" then
+				depth = depth - 1
+				if depth == 0 then close_idx = i; break end
+			end
+		end
+		if not close_idx then return false end
+		local inner = {}
+		for i = 2, close_idx - 1 do inner[#inner + 1] = tokens[i] end
+		local body = tokens_to_string(inner)
+		-- Fork and execute in child
+		local unistd = require("posix.unistd")
+		local wait = require("posix.sys.wait")
+		local env = require("sh.env")
+		local pid = unistd.fork()
+		if pid == 0 then
+			run_cmd(body)
+			os.exit(tonumber(env.get("?")) or 0)
+		end
+		local _, reason, status = wait.wait(pid)
+		if reason == "exited" then
+			env.set_status(status)
+		elseif reason == "killed" then
+			env.set_status(128 + status)
+		else
+			env.set_status(1)
+		end
+		return true
+	elseif first == "{" then
+		-- Brace group: find matching }
+		local depth = 0
+		local close_idx
+		for i = 1, #tokens do
+			if tokens[i] == "{" then depth = depth + 1
+			elseif tokens[i] == "}" then
+				depth = depth - 1
+				if depth == 0 then close_idx = i; break end
+			end
+		end
+		if not close_idx then return false end
+		local inner = {}
+		for i = 2, close_idx - 1 do inner[#inner + 1] = tokens[i] end
+		local body = tokens_to_string(inner)
+		run_cmd(body)
 		return true
 	end
 

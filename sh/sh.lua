@@ -62,132 +62,67 @@ else
 	end
 end
 
-local function run_pipeline(pipeline)
-	if #pipeline == 0 or (#pipeline == 1 and #pipeline[1] == 0) then
-		return tonumber(env.get("?")) or 0
-	end
-	return exec.execute(pipeline)
-end
-
-local function run_chain(chain)
-	local status = 0
-	for i, entry in ipairs(chain) do
-		if i == 1 then
-			status = run_pipeline(entry.pipeline)
-		else
-			local prev_op = chain[i - 1].op
-			if prev_op == "&&" then
-				if status == 0 then
-					status = run_pipeline(entry.pipeline)
-				end
-			elseif prev_op == "||" then
-				if status ~= 0 then
-					status = run_pipeline(entry.pipeline)
-				end
-			else
-				status = run_pipeline(entry.pipeline)
-			end
-		end
-	end
-	return status
-end
-
-local function run_list(list)
-	for _, item in ipairs(list) do
-		if item.async then
-			local pid = unistd.fork()
-			if pid == 0 then
-				run_chain(item.chain)
-				os.exit(tonumber(env.get("?")) or 0)
-			end
-			env.set_last_bg(pid)
-			env.set_status(0)
-		else
-			local status = run_chain(item.chain)
-			env.set_status(status)
-		end
-	end
-end
-
 local compound = require("sh.compound")
+local parse = require("sh.parse")
+local walker = require("sh.walk")
 
-local function run_line(line)
-	-- get flat tokens to check for compound commands
+local function run_line(line, heredoc_lines)
 	local flat = lexer.tokenize_flat(line)
 	if not flat then
 		unistd.write(2, "sh: parse error\n")
 		env.set_status(2)
 		return
 	end
-
-	-- split flat tokens on ; at top level (respecting if/while/for nesting)
-	local segments = {}
-	local current = {}
-	local depth = 0
-	for _, t in ipairs(flat) do
-		if t == "if" or t == "while" or t == "until" or t == "for" then
-			depth = depth + 1
-			current[#current + 1] = t
-		elseif t == "fi" or t == "done" then
-			depth = depth - 1
-			current[#current + 1] = t
-		elseif t == ";" and depth == 0 then
-			if #current > 0 then
-				segments[#segments + 1] = current
-			end
-			current = {}
-		else
-			current[#current + 1] = t
+	local ast, err = parse.parse(flat)
+	if not ast then
+		if err == "incomplete" then
+			unistd.write(2, "sh: syntax error: unexpected end of input\n")
 		end
+		return
 	end
-	if #current > 0 then
-		segments[#segments + 1] = current
-	end
-
-	-- execute each segment
-	for _, seg in ipairs(segments) do
-		if env.get("_break") or env.get("_continue") then
-			break
-		end
-		if compound.is_compound(seg) then
-			compound.try_execute(seg)
-		else
-			-- build list structure directly from flat tokens
-			local list = {}
-			local chain = {}
-			local pipeline = {}
-			local current = {}
-			for _, t in ipairs(seg) do
-				if t == "|" then
-					pipeline[#pipeline + 1] = current; current = {}
-				elseif t == "&&" or t == "||" then
-					pipeline[#pipeline + 1] = current; current = {}
-					chain[#chain + 1] = { pipeline = pipeline, op = t }
-					pipeline = {}
-				elseif t == "&" then
-					pipeline[#pipeline + 1] = current; current = {}
-					chain[#chain + 1] = { pipeline = pipeline }
-					pipeline = {}
-					list[#list + 1] = { chain = chain, async = true }
-					chain = {}
-				else
-					current[#current + 1] = t
+	-- Collect here-doc bodies from heredoc_lines if provided
+	if heredoc_lines then
+		local function attach_heredocs(node)
+			if not node then return end
+			if node.type == "simple" and node.heredocs and #node.heredocs > 0 then
+				node.heredoc_bodies = {}
+				for _, hd in ipairs(node.heredocs) do
+					-- Find body in heredoc_lines
+					local body = {}
+					local found = false
+					local idx = 1
+					while idx <= #heredoc_lines do
+						local l = heredoc_lines[idx]
+						table.remove(heredoc_lines, idx)
+						if hd.strip then l = l:gsub("^\t+", "") end
+						if l == hd.delim then found = true; break end
+						body[#body + 1] = l
+					end
+					node.heredoc_bodies[#node.heredoc_bodies + 1] = table.concat(body, "\n") .. (found and "\n" or "")
 				end
 			end
-			pipeline[#pipeline + 1] = current
-			chain[#chain + 1] = { pipeline = pipeline }
-			list[#list + 1] = { chain = chain, async = false }
-			run_list(list)
+			-- Recurse into child nodes
+			if node.items then for _, item in ipairs(node.items) do attach_heredocs(item) end end
+			if node.cmds then for _, cmd in ipairs(node.cmds) do attach_heredocs(cmd) end end
+			if node.left then attach_heredocs(node.left) end
+			if node.right then attach_heredocs(node.right) end
+			if node.body then attach_heredocs(node.body) end
+			if node.cond then attach_heredocs(node.cond) end
+			if node.then_body then attach_heredocs(node.then_body) end
+			if node.else_body then attach_heredocs(node.else_body) end
 		end
+		attach_heredocs(ast)
 	end
+	local status = walker.walk(ast)
+	env.set_status(status or 0)
 end
 
 expand.set_run_fn(run_line)
-compound.set_run_fn(run_line)
 
 -- -c mode: run command string and exit
 if cmd_string then
 	run_line(cmd_string)
+	env.run_exit_trap()
 	os.exit(tonumber(env.get("?")) or 0)
 end
 
@@ -228,31 +163,59 @@ if script_file then
 		return not in_single and not in_double
 	end
 
-	for line in content:gmatch("([^\n]*)\n?") do
+	-- Split content into lines for indexed access
+	local lines = {}
+	for l in content:gmatch("([^\n]*)\n?") do
+		if l ~= "" or #lines == 0 then lines[#lines + 1] = l end
+	end
+
+	-- Extract here-doc delimiters from a flat token list
+	local function get_heredoc_delims(flat)
+		local delims = {}
+		for i = 1, #flat do
+			if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
+				local strip = (flat[i] == "<<-")
+				local delim = flat[i + 1]
+				-- Strip quotes from delimiter
+				if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
+					delim = delim:sub(2, -2)
+				end
+				delims[#delims + 1] = { delim = delim, strip = strip }
+			end
+		end
+		return delims
+	end
+
+	local li = 1
+	while li <= #lines do
+		local line = lines[li]
+		li = li + 1
 		if line:sub(-1) == "\\" then
 			pending = pending .. line:sub(1, -2)
 		else
 			pending = pending .. (pending ~= "" and "\n" or "") .. line
-			-- check if quotes are balanced
 			if not quotes_balanced(pending) then
-				-- incomplete, keep accumulating
+				-- incomplete
 			else
-				-- check if compound command is complete
 				local flat = lexer.tokenize_flat(pending)
-				if flat then
-					local depth = 0
-					for _, t in ipairs(flat) do
-						if t == "if" or t == "while" or t == "until" or t == "for" then
-							depth = depth + 1
-						elseif t == "fi" or t == "done" then
-							depth = depth - 1
+				if flat and parse.is_complete(flat) then
+					-- Collect here-doc bodies
+					local delims = get_heredoc_delims(flat)
+					local heredoc_lines = {}
+					for _, hd in ipairs(delims) do
+						while li <= #lines do
+							local hl = lines[li]
+							li = li + 1
+							if hd.strip then hl = hl:gsub("^\t+", "") end
+							if hl == hd.delim then break end
+							heredoc_lines[#heredoc_lines + 1] = hl
 						end
 					end
-					if depth <= 0 then
-						if pending ~= "" then run_line(pending) end
-						pending = ""
+					if pending ~= "" then
+						run_line(pending, #heredoc_lines > 0 and heredoc_lines or nil)
 					end
-				else
+					pending = ""
+				elseif not flat then
 					if pending ~= "" then run_line(pending) end
 					pending = ""
 				end
@@ -262,6 +225,7 @@ if script_file then
 	if pending ~= "" then
 		run_line(pending)
 	end
+	env.run_exit_trap()
 	os.exit(tonumber(env.get("?")) or 0)
 end
 
@@ -458,15 +422,7 @@ while true do
 		if not flat then
 			break
 		end
-		local depth = 0
-		for _, t in ipairs(flat) do
-			if t == "if" or t == "while" or t == "until" or t == "for" then
-				depth = depth + 1
-			elseif t == "fi" or t == "done" then
-				depth = depth - 1
-			end
-		end
-		if depth <= 0 then
+		if parse.is_complete(flat) then
 			break
 		end
 		-- need more input
@@ -479,6 +435,34 @@ while true do
 		end
 		line = line .. "\n" .. cont
 	end
-	run_line(line)
+	-- Collect here-doc bodies if needed
+	local flat = lexer.tokenize_flat(line)
+	local heredoc_lines
+	if flat then
+		local delims = {}
+		for i = 1, #flat do
+			if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
+				local strip = (flat[i] == "<<-")
+				local delim = flat[i + 1]
+				if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
+					delim = delim:sub(2, -2)
+				end
+				delims[#delims + 1] = { delim = delim, strip = strip }
+			end
+		end
+		if #delims > 0 then
+			heredoc_lines = {}
+			for _, hd in ipairs(delims) do
+				while true do
+					local hl = read_line()
+					if not hl then break end
+					if hd.strip then hl = hl:gsub("^\t+", "") end
+					if hl == hd.delim then break end
+					heredoc_lines[#heredoc_lines + 1] = hl
+				end
+			end
+		end
+	end
+	run_line(line, heredoc_lines)
 	sigint_received = false
 end

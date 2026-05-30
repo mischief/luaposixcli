@@ -169,6 +169,151 @@ local builtins = {
 	[":"] = function()
 		return 0
 	end,
+	["trap"] = function(args)
+		local signal_mod = require("posix.signal")
+		local traps = env.get_traps and env.get_traps() or nil
+		if not traps then return 0 end
+		if #args == 1 then
+			-- List traps
+			for sig, action in pairs(traps) do
+				unistd.write(1, "trap -- '" .. action .. "' " .. sig .. "\n")
+			end
+			return 0
+		end
+		local action = args[2]
+		local sig_names = {}
+		for i = 3, #args do sig_names[#sig_names + 1] = args[i] end
+		if #sig_names == 0 then
+			-- trap '' means list, trap 'cmd' with no signals is error
+			sig_names[1] = "EXIT"
+		end
+		for _, sig in ipairs(sig_names) do
+			if action == "" or action == "-" then
+				-- Reset to default
+				traps[sig] = nil
+				if sig ~= "EXIT" and sig ~= "0" then
+					local signo = signal_mod["SIG" .. sig]
+					if signo then signal_mod.signal(signo, signal_mod.SIG_DFL) end
+				end
+			else
+				traps[sig] = action
+				if sig ~= "EXIT" and sig ~= "0" then
+					local signo = signal_mod["SIG" .. sig]
+					if signo then
+						signal_mod.signal(signo, function()
+							local run_fn = require("sh.expand").get_run_fn()
+							if run_fn then run_fn(action) end
+						end)
+					end
+				end
+			end
+		end
+		return 0
+	end,
+	["return"] = function(args)
+		local n = tonumber(args[2]) or tonumber(env.get("?")) or 0
+		env.set("_return", tostring(n))
+		return n
+	end,
+	["eval"] = function(args)
+		local s = table.concat(args, " ", 2)
+		if s ~= "" then
+			local run_fn = require("sh.expand").get_run_fn and require("sh.expand").get_run_fn()
+			if run_fn then run_fn(s) end
+		end
+		return tonumber(env.get("?")) or 0
+	end,
+	["shift"] = function(args)
+		local n = tonumber(args[2]) or 1
+		local argv = env.get_argv()
+		if n >= #argv then
+			env.set_argv({ argv[1] })
+		else
+			local new = { argv[1] }
+			for i = n + 2, #argv do new[#new + 1] = argv[i] end
+			env.set_argv(new)
+		end
+		return 0
+	end,
+	["."] = function(args)
+		if not args[2] then
+			unistd.write(2, "sh: .: filename argument required\n")
+			return 2
+		end
+		local path = args[2]
+		if not path:find("/") then
+			-- Search PATH
+			local p = env.get("PATH") or "/bin:/usr/bin"
+			local found
+			for dir in p:gmatch("[^:]+") do
+				local full = dir .. "/" .. path
+				if unistd.access(full, "r") == 0 then found = full; break end
+			end
+			if not found and unistd.access(path, "r") == 0 then found = path end
+			path = found
+		end
+		if not path then
+			unistd.write(2, "sh: .: " .. args[2] .. ": not found\n")
+			return 1
+		end
+		local fd = fcntl.open(path, fcntl.O_RDONLY)
+		if not fd then
+			unistd.write(2, "sh: .: " .. args[2] .. ": No such file or directory\n")
+			return 1
+		end
+		local chunks = {}
+		while true do
+			local data = unistd.read(fd, 8192)
+			if not data or data == "" then break end
+			chunks[#chunks + 1] = data
+		end
+		unistd.close(fd)
+		local content = table.concat(chunks)
+		local run_fn = require("sh.expand").get_run_fn and require("sh.expand").get_run_fn()
+		if run_fn then
+			for line in content:gmatch("([^\n]+)") do
+				run_fn(line)
+			end
+		end
+		return tonumber(env.get("?")) or 0
+	end,
+	["command"] = function(args)
+		-- Skip functions, run builtin or external directly
+		if #args < 2 then return 0 end
+		local cmd_args = {}
+		for i = 2, #args do cmd_args[#cmd_args + 1] = args[i] end
+		-- Check builtins (skip functions)
+		if builtins[cmd_args[1]] then
+			return builtins[cmd_args[1]](cmd_args)
+		end
+		-- External
+		local path
+		if cmd_args[1]:find("/") then
+			path = cmd_args[1]
+		else
+			local p = env.get("PATH") or "/bin:/usr/bin"
+			for dir in p:gmatch("[^:]+") do
+				local full = dir .. "/" .. cmd_args[1]
+				if unistd.access(full, "x") == 0 then path = full; break end
+			end
+		end
+		if not path then
+			unistd.write(2, "sh: " .. cmd_args[1] .. ": command not found\n")
+			return 127
+		end
+		local pid = unistd.fork()
+		if pid == 0 then
+			local rest = {}
+			for i = 2, #cmd_args do rest[#rest + 1] = cmd_args[i] end
+			unistd.execp(path, rest)
+			os.exit(127)
+		end
+		local _, reason, status = wait.wait(pid)
+		if reason == "exited" then return status end
+		if reason == "killed" then return 128 + status end
+		return 1
+	end,
+	["type"] = nil, -- defined below (needs builtins reference)
 	["break"] = function(args)
 		env.set("_break", tostring(tonumber(args[2]) or 1))
 		return 0
@@ -188,6 +333,205 @@ local builtins = {
 	echo = function(args)
 		local out = table.concat(args, " ", 2) .. "\n"
 		unistd.write(1, out)
+		return 0
+	end,
+	getopts = function(args)
+		-- getopts optstring name [arg...]
+		if #args < 3 then return 2 end
+		local optstring = args[2]
+		local varname = args[3]
+		-- Get positional params or explicit args
+		local params
+		if args[4] then
+			params = {}
+			for i = 4, #args do params[#params + 1] = args[i] end
+		else
+			-- Use shell positional parameters ($1, $2, ...)
+			local all = env.get("@")
+			params = {}
+			for w in all:gmatch("%S+") do params[#params + 1] = w end
+		end
+		local optind = tonumber(env.get("OPTIND")) or 1
+		if optind > #params then
+			env.set(varname, "?")
+			return 1
+		end
+		local arg_val = params[optind]
+		if not arg_val or arg_val:sub(1, 1) ~= "-" or arg_val == "-" then
+			env.set(varname, "?")
+			return 1
+		end
+		if arg_val == "--" then
+			env.set("OPTIND", tostring(optind + 1))
+			env.set(varname, "?")
+			return 1
+		end
+		-- Get current char position within the arg (for bundled opts like -abc)
+		local optpos = tonumber(env.get("_OPTPOS")) or 2
+		local ch = arg_val:sub(optpos, optpos)
+		if ch == "" then
+			-- Move to next arg
+			optind = optind + 1
+			env.set("OPTIND", tostring(optind))
+			env.set("_OPTPOS", "2")
+			if optind > #params then
+				env.set(varname, "?")
+				return 1
+			end
+			arg_val = params[optind]
+			if not arg_val or arg_val:sub(1, 1) ~= "-" or arg_val == "-" or arg_val == "--" then
+				env.set(varname, "?")
+				return 1
+			end
+			optpos = 2
+			ch = arg_val:sub(optpos, optpos)
+		end
+		-- Check if ch is in optstring
+		local colon_start = optstring:sub(1, 1) == ":"
+		local idx = optstring:find(ch, 1, true)
+		if not idx then
+			-- Unknown option
+			env.set(varname, "?")
+			env.unset("OPTARG")
+			if not colon_start then
+				unistd.write(2, "sh: illegal option -- " .. ch .. "\n")
+			else
+				env.set("OPTARG", ch)
+			end
+			if optpos < #arg_val then
+				env.set("_OPTPOS", tostring(optpos + 1))
+			else
+				env.set("OPTIND", tostring(optind + 1))
+				env.set("_OPTPOS", "2")
+			end
+			return 0
+		end
+		-- Check if option takes an argument
+		if idx < #optstring and optstring:sub(idx + 1, idx + 1) == ":" then
+			-- Needs argument
+			if optpos < #arg_val then
+				-- Rest of current arg is the argument
+				env.set("OPTARG", arg_val:sub(optpos + 1))
+			else
+				-- Next arg is the argument
+				optind = optind + 1
+				if optind > #params then
+					env.set(varname, colon_start and ":" or "?")
+					env.set("OPTARG", ch)
+					if not colon_start then
+						unistd.write(2, "sh: option requires an argument -- " .. ch .. "\n")
+					end
+					env.set("OPTIND", tostring(optind))
+					env.set("_OPTPOS", "2")
+					return 0
+				end
+				env.set("OPTARG", params[optind])
+			end
+			env.set("OPTIND", tostring(optind + 1))
+			env.set("_OPTPOS", "2")
+		else
+			-- No argument
+			env.unset("OPTARG")
+			if optpos < #arg_val then
+				env.set("_OPTPOS", tostring(optpos + 1))
+			else
+				env.set("OPTIND", tostring(optind + 1))
+				env.set("_OPTPOS", "2")
+			end
+		end
+		env.set(varname, ch)
+		return 0
+	end,
+	read = function(args)
+		-- parse options
+		local raw = false
+		local vars = {}
+		local i = 2
+		while i <= #args do
+			if args[i] == "-r" then raw = true
+			elseif args[i]:sub(1, 1) ~= "-" then
+				for j = i, #args do vars[#vars + 1] = args[j] end
+				break
+			end
+			i = i + 1
+		end
+		if #vars == 0 then vars[1] = "REPLY" end
+		-- read one line from stdin
+		local buf = {}
+		while true do
+			local ch = unistd.read(0, 1)
+			if not ch or ch == "" then
+				-- EOF
+				if #buf == 0 then
+					for _, v in ipairs(vars) do env.set(v, "") end
+					return 1
+				end
+				break
+			end
+			if ch == "\n" then break end
+			if not raw and ch == "\\" then
+				local nxt = unistd.read(0, 1)
+				if not nxt or nxt == "" then break end
+				if nxt == "\n" then goto continue end -- line continuation
+				buf[#buf + 1] = nxt
+			else
+				buf[#buf + 1] = ch
+			end
+			::continue::
+		end
+		local line = table.concat(buf)
+		-- field splitting using IFS
+		local ifs = env.get("IFS")
+		if ifs == nil then ifs = " \t\n" end
+		if ifs == "" then
+			-- no splitting
+			env.set(vars[1], line)
+			for j = 2, #vars do env.set(vars[j], "") end
+			return 0
+		end
+		-- split into fields
+		local fields = {}
+		local pos = 1
+		local len = #line
+		-- skip leading IFS whitespace
+		while pos <= len and ifs:find(line:sub(pos, pos), 1, true) and
+			(line:sub(pos, pos) == " " or line:sub(pos, pos) == "\t" or line:sub(pos, pos) == "\n") do
+			pos = pos + 1
+		end
+		while pos <= len and #fields < #vars - 1 do
+			local start = pos
+			while pos <= len and not ifs:find(line:sub(pos, pos), 1, true) do
+				pos = pos + 1
+			end
+			fields[#fields + 1] = line:sub(start, pos - 1)
+			-- skip IFS delimiters
+			if pos <= len then
+				-- skip one non-whitespace IFS char or whitespace IFS chars
+				local c = line:sub(pos, pos)
+				if c == " " or c == "\t" or c == "\n" then
+					while pos <= len and ifs:find(line:sub(pos, pos), 1, true) and
+						(line:sub(pos, pos) == " " or line:sub(pos, pos) == "\t" or line:sub(pos, pos) == "\n") do
+						pos = pos + 1
+					end
+				else
+					pos = pos + 1
+					-- also skip surrounding whitespace
+					while pos <= len and (line:sub(pos, pos) == " " or line:sub(pos, pos) == "\t") do
+						pos = pos + 1
+					end
+				end
+			end
+		end
+		-- last var gets the rest (with trailing IFS whitespace stripped)
+		if pos <= len then
+			local rest = line:sub(pos)
+			rest = rest:gsub("[%s]+$", "")
+			fields[#fields + 1] = rest
+		end
+		-- assign to variables
+		for j, v in ipairs(vars) do
+			env.set(v, fields[j] or "")
+		end
 		return 0
 	end,
 	exit = function(args)
@@ -260,6 +604,32 @@ local builtins = {
 		return 0
 	end,
 }
+
+builtins["type"] = function(args)
+	for i = 2, #args do
+		local name = args[i]
+		local walker = require("sh.walk")
+		if walker.functions[name] then
+			unistd.write(1, name .. " is a function\n")
+		elseif builtins[name] then
+			unistd.write(1, name .. " is a shell builtin\n")
+		else
+			local p = env.get("PATH") or "/bin:/usr/bin"
+			local found
+			for dir in p:gmatch("[^:]+") do
+				local full = dir .. "/" .. name
+				if unistd.access(full, "x") == 0 then found = full; break end
+			end
+			if found then
+				unistd.write(1, name .. " is " .. found .. "\n")
+			else
+				unistd.write(2, "sh: type: " .. name .. ": not found\n")
+				return 1
+			end
+		end
+	end
+	return 0
+end
 
 -- expand all words in a segment and handle leading assignments
 -- returns assignments, expanded args, redirections
@@ -396,4 +766,4 @@ local function execute(pipeline)
 	return last_status
 end
 
-return { execute = execute }
+return { execute = execute, get_builtins = function() return builtins end }

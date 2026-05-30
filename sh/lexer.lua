@@ -29,8 +29,8 @@ end)
 -- backslash escape: consume backslash, capture next char literally
 local escape = P("\\") * C(P(1))
 
--- unquoted word chars: anything not blank, newline, quote, backslash, #, |, &, ;, $
-local wordchar = 1 - S(" \t\n\"'\\#|&;$<>`")
+-- unquoted word chars: anything not blank, newline, quote, backslash, #, |, &, ;, $, (), {}
+local wordchar = 1 - S(" \t\n\"'\\#|&;$<>`(){}")
 
 -- $(...) command substitution: capture the whole $(...) including delimiters as literal text
 local cmdsub = Cmt(P("$"), function(s, p)
@@ -62,10 +62,11 @@ end
 -- bare $VAR or $? etc - capture as literal text for later expansion
 local dollar_lit =
 	C(P("${") * (1 - P("}")) ^ 1 * P("}")) +
-	C(P("$") * (lpeg.R("az", "AZ") + P("_") + lpeg.S("?$!-@*#0")) * (lpeg.R("az", "AZ", "09") + P("_")) ^ 0)
+	C(P("$") * lpeg.R("09")) +
+	C(P("$") * (lpeg.R("az", "AZ") + P("_") + lpeg.S("?$!-@*#")) * (lpeg.R("az", "AZ", "09") + P("_")) ^ 0)
 
--- redirection operators: capture as literal word tokens (>> before >)
-local redir = C(P(">>") + P(">&") + P("<&") + P(">") + P("<"))
+-- redirection operators: capture as literal word tokens (>> before >, << before <)
+local redir = C(P("<<-") + P("<<") + P(">>") + P(">&") + P("<&") + P(">") + P("<"))
 
 -- a word is one or more segments concatenated
 local segment = escape + sq + dq + cmdsub + backtick + dollar_lit + C(wordchar ^ 1)
@@ -85,7 +86,9 @@ end
 local pipe_op = P("|") / function()
 	return { op = "|" }
 end
-local semi_op = (P(";") + P("\n")) / function()
+local semi_op = P(";;") / function()
+	return { op = ";;" }
+end + (P(";") + P("\n")) / function()
 	return { op = ";" }
 end
 local async_op = P("&") / function()
@@ -93,7 +96,8 @@ local async_op = P("&") / function()
 end
 
 local operator = and_op + or_op + pipe_op + semi_op + async_op
-local token = operator + redir + (word / fold_word)
+local paren = C(S("(){}"))
+local token = operator + redir + paren + (word / fold_word)
 local tokens = Ct((blank ^ 0 * token) ^ 0) * (blank ^ 0 * comment) ^ -1
 
 -- Parse a line into a "list": array of and_or entries separated by ;

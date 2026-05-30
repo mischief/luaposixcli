@@ -8,20 +8,31 @@ local status = 0
 local argv = { "sh" }
 local last_bg = ""
 local opts = {} -- single-char option flags: opts["x"] = true/false
+local traps = {} -- signal name -> action string
 
 -- seed from process environment
 local function seed_from_env()
 	local f = io.open("/proc/self/environ", "rb")
-	if not f then
+	if f then
+		local data = f:read("*a")
+		f:close()
+		for entry in data:gmatch("[^%z]+") do
+			local k, v = entry:match("^([^=]+)=(.*)")
+			if k then
+				vars[k] = v
+				exported[k] = true
+			end
+		end
 		return
 	end
-	local data = f:read("*a")
-	f:close()
-	for entry in data:gmatch("[^%z]+") do
-		local k, v = entry:match("^([^=]+)=(.*)")
-		if k then
-			vars[k] = v
-			exported[k] = true
+	-- Fallback: use posix.stdlib.getenv()
+	local ok, stdlib = pcall(require, "posix.stdlib")
+	if ok and stdlib.getenv then
+		for k, v in pairs(stdlib.getenv()) do
+			if type(k) == "string" then
+				vars[k] = v
+				exported[k] = true
+			end
 		end
 	end
 end
@@ -76,6 +87,11 @@ function M.get(name)
 	if name == "#" then
 		return tostring(#argv - 1)
 	end
+	-- Numeric positional parameters $1, $2, ...
+	local n = tonumber(name)
+	if n and n >= 1 then
+		return argv[n + 1] or ""
+	end
 	if name == "@" or name == "*" then
 		local t = {}
 		for i = 2, #argv do
@@ -107,6 +123,10 @@ function M.set_argv(a)
 	argv = a
 end
 
+function M.get_argv()
+	return argv
+end
+
 function M.set_last_bg(pid)
 	last_bg = tostring(pid)
 end
@@ -125,6 +145,18 @@ end
 -- returns iterator over all variables (name, value)
 function M.all_vars()
 	return pairs(vars)
+end
+
+function M.get_traps()
+	return traps
+end
+
+function M.run_exit_trap()
+	local action = traps["EXIT"] or traps["0"]
+	if action then
+		local run_fn = require("sh.expand").get_run_fn()
+		if run_fn then run_fn(action) end
+	end
 end
 
 M.reset()

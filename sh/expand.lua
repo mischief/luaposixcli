@@ -63,11 +63,64 @@ local function cmdsub(cmd)
 end
 
 -- match $(...) using Cmt with a P("$") guard so it never matches empty
+-- Evaluate arithmetic expression (POSIX shell arithmetic)
+local function arith_eval(expr)
+	-- Expand variables in the expression
+	local expanded = expr:gsub("%$([%a_][%w_]*)", function(name)
+		return env.get(name) or "0"
+	end):gsub("%$(%d)", function(n)
+		return env.get(n) or "0"
+	end)
+	-- Replace variable names (bare words) with their values
+	expanded = expanded:gsub("([%a_][%w_]*)", function(name)
+		local v = env.get(name)
+		return v and v or name
+	end)
+	-- Evaluate using Lua (safe subset: only arithmetic)
+	-- Convert shell operators: ! → not, ~ is bitwise not (lua 5.4 supports it)
+	expanded = expanded:gsub("([^!<>=])!=", "%1~=") -- != → ~=
+	expanded = expanded:gsub("^!=", "~=")
+	expanded = expanded:gsub("&&", " and ")
+	expanded = expanded:gsub("||", " or ")
+	expanded = expanded:gsub("([^~])!", "%1 not ")
+	expanded = expanded:gsub("^!", "not ")
+	local fn, err = load("return (" .. expanded .. ")", "arith", "t", { math = math })
+	if fn then
+		local ok, result = pcall(fn)
+		if ok then
+			if type(result) == "boolean" then return result and "1" or "0" end
+			if type(result) == "number" then return tostring(math.floor(result)) end
+			return tostring(result)
+		end
+	end
+	return "0"
+end
+
 local cmdsub_pat = Cmt(P("$"), function(s, p)
 	-- p is after the "$", check for "("
 	if s:sub(p, p) ~= "(" then
 		return nil
 	end
+	-- Check for $(( — arithmetic expansion
+	if s:sub(p, p + 1) == "((" then
+		-- Find matching ))
+		local depth = 0
+		local i = p + 1 -- at the second (
+		while i <= #s do
+			local c = s:sub(i, i)
+			if c == "(" then depth = depth + 1
+			elseif c == ")" then
+				depth = depth - 1
+				if depth == 0 and s:sub(i, i + 1) == "))" then
+					local inner = s:sub(p + 2, i - 1)
+					return i + 2, arith_eval(inner)
+				end
+			end
+			i = i + 1
+		end
+		return nil
+	end
+	-- Regular command substitution $(...)
 	local depth = 0
 	local i = p -- at the '('
 	while i <= #s do
@@ -98,8 +151,9 @@ end
 -- $VAR, ${VAR}, ${#VAR}, $? etc.
 local dollar_exp =
 	(P("${#") * C(varname) * P("}")) / lookup_length +
-	(P("${") * C(varname + special) * P("}")) / lookup +
+	(P("${") * C(varname + special + lpeg.R("09") ^ 1) * P("}")) / lookup +
 	(P("$") * C(special)) / lookup +
+	(P("$") * C(lpeg.R("09"))) / lookup +
 	(P("$") * C(varname)) / lookup
 
 -- single-quoted: literal (no expansion)
@@ -187,4 +241,5 @@ return {
 	parse_assignment = parse_assignment,
 	set_sh_path = set_sh_path,
 	set_run_fn = set_run_fn,
+	get_run_fn = function() return run_fn end,
 }

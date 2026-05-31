@@ -7,7 +7,7 @@ package.path = prefix .. "?.lua;" .. prefix .. "share/lua/5.4/?.lua;" .. package
 
 local unistd = require("posix.unistd")
 local fcntl = require("posix.fcntl")
-local termio = require("posix.termio")
+local ok_termio, termio = pcall(require, "posix.termio")
 local dirent = require("posix.dirent")
 local stat = require("posix.sys.stat")
 local signal = require("posix.signal")
@@ -15,6 +15,11 @@ local lexer = require("sh.lexer")
 local exec = require("sh.exec")
 local env = require("sh.env")
 local expand = require("sh.expand")
+
+-- signal state: set by handler, checked by line editor
+-- Disable buffering on stdout/stderr so output appears immediately
+io.stdout:setvbuf("no")
+io.stderr:setvbuf("no")
 
 -- signal state: set by handler, checked by line editor
 local sigint_received = false
@@ -297,9 +302,11 @@ local function read_line()
 	end
 
 	-- interactive: raw mode line editing with tab completion
-	local orig = termio.tcgetattr(0)
+	local orig = ok_termio and termio.tcgetattr(0) or nil
 	if not orig then
 		-- tcgetattr failed - fall back to simple line read
+		-- Print prompt since the main loop's prompt() already ran,
+		-- but if we got here the terminal might need a nudge
 		local buf = {}
 		while true do
 			local ch = unistd.read(0, 1)

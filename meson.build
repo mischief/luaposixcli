@@ -70,6 +70,7 @@ foreach u : [
   'sh',
   'make',
   'ed',
+  'ping',
 ]
   subdir(u)
 endforeach

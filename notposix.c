@@ -155,6 +155,7 @@ static const luaL_Reg regex_methods[] = {
 static int
 l_mount(lua_State *L)
 {
+#ifdef __linux__
 	const char *source = luaL_checkstring(L, 1);
 	const char *target = luaL_checkstring(L, 2);
 	const char *fstype = luaL_checkstring(L, 3);
@@ -162,6 +163,14 @@ l_mount(lua_State *L)
 	const char *data = luaL_optstring(L, 5, NULL);
 
 	if (mount(source, target, fstype, flags, data) == -1) {
+#else
+	const char *fstype = luaL_checkstring(L, 1);
+	const char *target = luaL_checkstring(L, 2);
+	int flags = luaL_optinteger(L, 3, 0);
+	const char *data = luaL_optstring(L, 4, NULL);
+
+	if (mount(fstype, target, flags, (void *)data) == -1) {
+#endif
 		lua_pushnil(L);
 		lua_pushstring(L, strerror(errno));
 		return 2;
@@ -176,7 +185,11 @@ l_umount(lua_State *L)
 {
 	const char *target = luaL_checkstring(L, 1);
 
+#ifdef __linux__
 	if (umount(target) == -1) {
+#else
+	if (unmount(target, 0) == -1) {
+#endif
 		lua_pushnil(L);
 		lua_pushstring(L, strerror(errno));
 		return 2;

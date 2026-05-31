@@ -11,7 +11,7 @@ local gr = grp.getgrgid(gid)
 local uname = pw and pw.pw_name or tostring(uid)
 local gname = gr and gr.gr_name or tostring(gid)
 
-local groups = unistd.getgroups()
+local groups = unistd.getgroups() or {}
 local gstr = {}
 for _, g in ipairs(groups) do
 	local gi = grp.getgrgid(g)

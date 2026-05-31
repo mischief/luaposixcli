@@ -377,7 +377,41 @@ local function read_line()
 			-- find current word (last space-delimited token)
 			local line = table.concat(buf)
 			local prefix = line:match("(%S+)$") or ""
-			local matches = complete_filename(prefix)
+			-- Use command completion if on first word, filename otherwise
+			local matches
+			local before_prefix = line:sub(1, #line - #prefix)
+			if not before_prefix:find("%S") then
+				-- First word: complete from PATH + builtins
+				matches = {}
+				local seen = {}
+				-- builtins
+				local builtins = exec.get_builtins()
+				for name in pairs(builtins) do
+					if name:sub(1, #prefix) == prefix and not seen[name] then
+						matches[#matches + 1] = name
+						seen[name] = true
+					end
+				end
+				-- PATH
+				local path = env.get("PATH") or "/bin:/usr/bin"
+				for dir in path:gmatch("[^:]+") do
+					local entries = dirent.dir(dir)
+					if entries then
+						for _, e in ipairs(entries) do
+							if e:sub(1, #prefix) == prefix and not seen[e] then
+								local full = dir .. "/" .. e
+								if unistd.access(full, "x") == 0 then
+									matches[#matches + 1] = e
+									seen[e] = true
+								end
+							end
+						end
+					end
+				end
+				table.sort(matches)
+			else
+				matches = complete_filename(prefix)
+			end
 			if #matches == 1 then
 				-- complete it
 				local suffix = matches[1]:sub(#prefix + 1)

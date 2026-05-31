@@ -11,11 +11,9 @@ local expand = require("sh.expand")
 local M = {}
 
 -- Shell's process group (for terminal control)
--- Only do full job control if we're the foreground process group leader
 local shell_pgid = unistd.getpgrp()
 local shell_pid = unistd.getpid()
 local is_interactive = unistd.isatty(0) == 1
-local do_job_control = is_interactive and (shell_pgid == shell_pid)
 
 -- Function table: name -> AST node
 local functions = {}
@@ -186,16 +184,8 @@ local function exec_simple(node)
 	-- External command: fork + exec
 	local pid = unistd.fork()
 	if pid == 0 then
-		-- Child: own process group + terminal control (job control only)
-		if do_job_control then
-			notposix.setpgid(0, 0)
-			unistd.tcsetpgrp(0, unistd.getpid())
-		end
 		signal.signal(signal.SIGINT, signal.SIG_DFL)
 		signal.signal(signal.SIGQUIT, signal.SIG_DFL)
-		signal.signal(signal.SIGTSTP, signal.SIG_DFL)
-		signal.signal(signal.SIGTTIN, signal.SIG_DFL)
-		signal.signal(signal.SIGTTOU, signal.SIG_DFL)
 		apply_redirections(node.redirs, node.heredoc_bodies)
 		local path = find_in_path(args[1])
 		if not path then
@@ -207,23 +197,12 @@ local function exec_simple(node)
 		unistd.execp(path, rest)
 		os.exit(127)
 	end
-	-- Parent: give terminal to child's group (job control only)
-	if do_job_control then
-		notposix.setpgid(pid, pid)
-		unistd.tcsetpgrp(0, pid)
-	else
-		-- No job control: ignore SIGINT while waiting
-		signal.signal(signal.SIGINT, signal.SIG_IGN)
-		signal.signal(signal.SIGQUIT, signal.SIG_IGN)
-	end
+	-- Parent: ignore SIGINT/SIGQUIT while waiting for foreground child
+	local old_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
+	local old_quit = signal.signal(signal.SIGQUIT, signal.SIG_IGN)
 	local _, reason, status = wait.wait(pid)
-	-- Reclaim terminal / restore signals
-	if do_job_control then
-		unistd.tcsetpgrp(0, shell_pgid)
-	else
-		signal.signal(signal.SIGINT, signal.SIG_DFL)
-		signal.signal(signal.SIGQUIT, signal.SIG_DFL)
-	end
+	signal.signal(signal.SIGINT, old_int)
+	signal.signal(signal.SIGQUIT, old_quit)
 	if reason == "exited" then return status
 	elseif reason == "killed" then return 128 + status
 	else return 1 end

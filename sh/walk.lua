@@ -11,8 +11,11 @@ local expand = require("sh.expand")
 local M = {}
 
 -- Shell's process group (for terminal control)
+-- Only do full job control if we're the foreground process group leader
 local shell_pgid = unistd.getpgrp()
+local shell_pid = unistd.getpid()
 local is_interactive = unistd.isatty(0) == 1
+local do_job_control = is_interactive and (shell_pgid == shell_pid)
 
 -- Function table: name -> AST node
 local functions = {}
@@ -183,8 +186,8 @@ local function exec_simple(node)
 	-- External command: fork + exec
 	local pid = unistd.fork()
 	if pid == 0 then
-		-- Child: own process group + terminal control (interactive only)
-		if is_interactive then
+		-- Child: own process group + terminal control (job control only)
+		if do_job_control then
 			notposix.setpgid(0, 0)
 			unistd.tcsetpgrp(0, unistd.getpid())
 		end
@@ -204,15 +207,22 @@ local function exec_simple(node)
 		unistd.execp(path, rest)
 		os.exit(127)
 	end
-	-- Parent: give terminal to child's group (interactive only)
-	if is_interactive then
+	-- Parent: give terminal to child's group (job control only)
+	if do_job_control then
 		notposix.setpgid(pid, pid)
 		unistd.tcsetpgrp(0, pid)
+	else
+		-- No job control: ignore SIGINT while waiting
+		signal.signal(signal.SIGINT, signal.SIG_IGN)
+		signal.signal(signal.SIGQUIT, signal.SIG_IGN)
 	end
 	local _, reason, status = wait.wait(pid)
-	-- Reclaim terminal
-	if is_interactive then
+	-- Reclaim terminal / restore signals
+	if do_job_control then
 		unistd.tcsetpgrp(0, shell_pgid)
+	else
+		signal.signal(signal.SIGINT, signal.SIG_DFL)
+		signal.signal(signal.SIGQUIT, signal.SIG_DFL)
 	end
 	if reason == "exited" then return status
 	elseif reason == "killed" then return 128 + status

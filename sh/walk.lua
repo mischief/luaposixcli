@@ -200,7 +200,10 @@ local function exec_simple(node)
 	-- Parent: ignore SIGINT/SIGQUIT while waiting for foreground child
 	local old_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
 	local old_quit = signal.signal(signal.SIGQUIT, signal.SIG_IGN)
-	local _, reason, status = wait.wait(pid)
+	local _, reason, status
+	repeat
+		_, reason, status = wait.wait(pid)
+	until reason ~= nil
 	signal.signal(signal.SIGINT, old_int)
 	signal.signal(signal.SIGQUIT, old_quit)
 	if reason == "exited" then return status

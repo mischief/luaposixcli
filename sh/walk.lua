@@ -3,6 +3,7 @@
 local unistd = require("posix.unistd")
 local wait = require("posix.sys.wait")
 local fcntl = require("posix.fcntl")
+local signal = require("posix.signal")
 local env = require("sh.env")
 local expand = require("sh.expand")
 
@@ -177,6 +178,9 @@ local function exec_simple(node)
 	-- External command: fork + exec
 	local pid = unistd.fork()
 	if pid == 0 then
+		-- Child: restore default signal handlers
+		signal.signal(signal.SIGINT, signal.SIG_DFL)
+		signal.signal(signal.SIGQUIT, signal.SIG_DFL)
 		apply_redirections(node.redirs, node.heredoc_bodies)
 		local path = find_in_path(args[1])
 		if not path then
@@ -188,7 +192,12 @@ local function exec_simple(node)
 		unistd.execp(path, rest)
 		os.exit(127)
 	end
+	-- Parent: ignore SIGINT/SIGQUIT while waiting for foreground child
+	local old_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
+	local old_quit = signal.signal(signal.SIGQUIT, signal.SIG_IGN)
 	local _, reason, status = wait.wait(pid)
+	signal.signal(signal.SIGINT, old_int)
+	signal.signal(signal.SIGQUIT, old_quit)
 	if reason == "exited" then return status
 	elseif reason == "killed" then return 128 + status
 	else return 1 end
@@ -213,7 +222,6 @@ local function exec_pipeline(node)
 
 		local pid = unistd.fork()
 		if pid == 0 then
-			local signal = require("posix.signal")
 			signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 			if prev_r then unistd.dup2(prev_r, 0); unistd.close(prev_r) end
 			if w then unistd.dup2(w, 1); unistd.close(w) end

@@ -8,7 +8,7 @@ install_data('sh.lua',
 )
 
 install_data(
-  'lexer.lua', 'exec.lua', 'env.lua', 'expand.lua', 'compound.lua', 'test.lua',
+  'lexer.lua', 'parse.lua', 'walk.lua', 'exec.lua', 'env.lua', 'expand.lua', 'compound.lua', 'test.lua',
   install_dir: lua_mod_dir / 'sh',
 )
 

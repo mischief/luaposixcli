@@ -298,6 +298,19 @@ local function read_line()
 
 	-- interactive: raw mode line editing with tab completion
 	local orig = termio.tcgetattr(0)
+	if not orig then
+		-- tcgetattr failed - fall back to simple line read
+		local buf = {}
+		while true do
+			local ch = unistd.read(0, 1)
+			if not ch or ch == "" then
+				if #buf == 0 then return nil end
+				return table.concat(buf)
+			end
+			if ch == "\n" then return table.concat(buf) end
+			buf[#buf + 1] = ch
+		end
+	end
 	local raw = {}
 	for k, v in pairs(orig) do
 		raw[k] = v

@@ -5,22 +5,29 @@ local src = a[0]:match("(.+/)") or "./"
 local prefix = src .. "../"
 package.path = prefix .. "?.lua;" .. prefix .. "share/lua/5.4/?.lua;" .. package.path
 
+local function dbg(msg)
+	local fd = io.open("/dev/kmsg", "w")
+	if fd then fd:write("sh-debug: " .. msg .. "\n"); fd:close() end
+end
+
+dbg("loading posix modules")
 local unistd = require("posix.unistd")
 local fcntl = require("posix.fcntl")
 local ok_termio, termio = pcall(require, "posix.termio")
 local dirent = require("posix.dirent")
 local stat = require("posix.sys.stat")
 local signal = require("posix.signal")
+dbg("loading sh modules")
 local lexer = require("sh.lexer")
 local exec = require("sh.exec")
 local env = require("sh.env")
 local expand = require("sh.expand")
 
--- signal state: set by handler, checked by line editor
 -- Disable buffering on stdout/stderr so output appears immediately
 io.stdout:setvbuf("no")
 io.stderr:setvbuf("no")
 
+dbg("setting up signals")
 -- signal state: set by handler, checked by line editor
 local sigint_received = false
 signal.signal(signal.SIGINT, function()
@@ -29,6 +36,7 @@ end)
 signal.signal(signal.SIGTSTP, signal.SIG_IGN)
 signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
+dbg("parsing options")
 expand.set_sh_path(a[0])
 expand.set_run_fn(nil) -- will be set after run_line is defined
 
@@ -123,6 +131,7 @@ local function run_line(line, heredoc_lines)
 	env.set_status(status or 0)
 end
 
+dbg("run_line defined, entering mode selection")
 expand.set_run_fn(run_line)
 
 -- -c mode: run command string and exit

@@ -213,6 +213,8 @@ local function exec_pipeline(node)
 
 		local pid = unistd.fork()
 		if pid == 0 then
+			local signal = require("posix.signal")
+			signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 			if prev_r then unistd.dup2(prev_r, 0); unistd.close(prev_r) end
 			if w then unistd.dup2(w, 1); unistd.close(w) end
 			if r then unistd.close(r) end

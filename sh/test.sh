@@ -52,4 +52,7 @@ SH="lua5.4 $D/sh.lua"
 [ "$($SH -c 'echo $((3*4+1))')" = "13" ] &&
 [ "$($SH -c 'x=10; echo $((x+5))')" = "15" ] &&
 [ "$($SH -c 'echo $((10%3))')" = "1" ] &&
-[ "$($SH -c 'echo $((5>3))')" = "1" ]
+[ "$($SH -c 'echo $((5>3))')" = "1" ] &&
+# pipeline SIGPIPE handling
+[ "$(timeout 3 $SH -c 'yes | head -3')" = "$(printf 'y\ny\ny')" ] &&
+[ "$(timeout 3 $SH -c 'seq 1000 | head -2')" = "$(printf '1\n2')" ]

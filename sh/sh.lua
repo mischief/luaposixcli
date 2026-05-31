@@ -22,6 +22,7 @@ signal.signal(signal.SIGINT, function()
 	sigint_received = true
 end)
 signal.signal(signal.SIGTSTP, signal.SIG_IGN)
+signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
 expand.set_sh_path(a[0])
 expand.set_run_fn(nil) -- will be set after run_line is defined

@@ -18,10 +18,16 @@ if not lua_dep.found()
   lua_dep = dependency('lua')
 endif
 
+notposix_link_args = []
+if host_machine.system() == 'freebsd'
+  notposix_link_args += ['-Wl,-z,undefs']
+endif
+
 notposix_lib = shared_library('notposix',
   'notposix.c',
   name_prefix: '',
   dependencies: [lua_dep],
+  link_args: notposix_link_args,
   install: true,
   install_dir: lua_lib_dir,
 )

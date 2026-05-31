@@ -4,12 +4,11 @@
  */
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/resource.h>
 #include <sys/mount.h>
 #include <regex.h>
-
-extern char **environ;
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -18,6 +17,7 @@ extern char **environ;
 static int
 l_environ(lua_State *L)
 {
+	extern char **environ;
 	lua_newtable(L);
 	int i = 1;
 	for (char **ep = environ; *ep != NULL; ep++) {

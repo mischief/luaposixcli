@@ -3,10 +3,9 @@
 local unistd = require("posix.unistd")
 local syslog = require("posix.syslog")
 
-local tag = nil
+local tag = "logger"
 local priority = syslog.LOG_NOTICE
 local facility = syslog.LOG_USER
-local msg_parts = {}
 
 local priorities = {
 	emerg = syslog.LOG_EMERG,
@@ -19,40 +18,37 @@ local priorities = {
 	debug = syslog.LOG_DEBUG,
 }
 
-local i = 1
-while i <= #arg do
-	local a = arg[i]
-	if a == "-t" then
-		i = i + 1
-		tag = arg[i]
-	elseif a == "-p" then
-		i = i + 1
-		local spec = arg[i] or ""
-		local p = spec:match("%.(.+)") or spec
-		if priorities[p] then
-			priority = priorities[p]
-		end
-	else
-		msg_parts[#msg_parts + 1] = a
+local optind = 1
+for opt, optarg, oi in unistd.getopt(arg, "t:p:") do
+	if opt == "t" then tag = optarg
+	elseif opt == "p" then
+		local p = optarg:match("%.(.+)") or optarg
+		if priorities[p] then priority = priorities[p] end
+	elseif opt == "?" then
+		unistd.write(2, "usage: logger [-t tag] [-p facility.priority] [message]\n")
+		os.exit(1)
 	end
-	i = i + 1
+	optind = oi
 end
 
+-- Remaining args are the message
+local msg_parts = {}
+for i = optind, #arg do
+	msg_parts[#msg_parts + 1] = arg[i]
+end
 local message = table.concat(msg_parts, " ")
 
--- read from stdin if no message
+-- Read from stdin if no message
 if message == "" then
 	local buf = {}
 	while true do
 		local data = unistd.read(0, 4096)
-		if not data or data == "" then
-			break
-		end
+		if not data or data == "" then break end
 		buf[#buf + 1] = data
 	end
 	message = table.concat(buf):gsub("\n+$", "")
 end
 
-syslog.openlog(tag or "logger", syslog.LOG_PID, facility)
+syslog.openlog(tag, syslog.LOG_PID, facility)
 syslog.syslog(priority, message)
 syslog.closelog()

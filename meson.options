@@ -1,2 +1,3 @@
 # SPDX-License-Identifier: ISC
 option('lua', type: 'string', value: 'lua5.4', description: 'Lua interpreter name (e.g. lua5.4, lua5.5)')
+option('extras', type: 'boolean', value: false, description: 'Build extra non-POSIX utilities (ping, etc.)')

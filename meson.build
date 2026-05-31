@@ -70,7 +70,10 @@ foreach u : [
   'sh',
   'make',
   'ed',
-  'ping',
 ]
   subdir(u)
 endforeach
+
+if get_option('extras')
+  subdir('extra')
+endif

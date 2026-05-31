@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: ISC
 busted = find_program('busted')
 
+sh_test_env = environment()
+sh_test_env.append('LUA_CPATH', meson.project_build_root() / '?.so', separator: ';')
+
 install_data('sh.lua',
   rename: 'sh',
   install_dir: get_option('bindir'),
@@ -30,27 +33,32 @@ test('sh.test', busted,
 test('sh.list', busted,
   args: ['--lua=' + lua_name, meson.current_source_dir() / 'list_test.lua'],
   workdir: meson.project_source_root(),
+  env: sh_test_env,
 )
 
 test('sh.cmdsub', busted,
   args: ['--lua=' + lua_name, meson.current_source_dir() / 'cmdsub_test.lua'],
   workdir: meson.project_source_root(),
+  env: sh_test_env,
 )
 
 test('sh.redir', busted,
   args: ['--lua=' + lua_name, meson.current_source_dir() / 'redir_test.lua'],
   workdir: meson.project_source_root(),
+  env: sh_test_env,
 )
 
 test('sh.compound', busted,
   args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_test.lua'],
   workdir: meson.project_source_root(),
+  env: sh_test_env,
   timeout: 10,
 )
 
 test('sh.compound_multiline', busted,
   args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_multiline_test.lua'],
   workdir: meson.project_source_root(),
+  env: sh_test_env,
   timeout: 10,
 )
 

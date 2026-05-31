@@ -4,7 +4,9 @@
  */
 #include <errno.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/resource.h>
+#include <sys/mount.h>
 #include <regex.h>
 
 extern char **environ;
@@ -149,12 +151,65 @@ static const luaL_Reg regex_methods[] = {
 	{NULL, NULL}
 };
 
+/* notposix.mount(source, target, fstype[, flags[, data]]) -> 0 or nil, errmsg */
+static int
+l_mount(lua_State *L)
+{
+	const char *source = luaL_checkstring(L, 1);
+	const char *target = luaL_checkstring(L, 2);
+	const char *fstype = luaL_checkstring(L, 3);
+	unsigned long flags = luaL_optinteger(L, 4, 0);
+	const char *data = luaL_optstring(L, 5, NULL);
+
+	if (mount(source, target, fstype, flags, data) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
+/* notposix.umount(target) -> 0 or nil, errmsg */
+static int
+l_umount(lua_State *L)
+{
+	const char *target = luaL_checkstring(L, 1);
+
+	if (umount(target) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
+/* notposix.setpgid(pid, pgid) -> 0 or nil, errmsg */
+static int
+l_setpgid(lua_State *L)
+{
+	pid_t pid = luaL_checkinteger(L, 1);
+	pid_t pgid = luaL_checkinteger(L, 2);
+
+	if (setpgid(pid, pgid) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
 static const luaL_Reg notposix_funcs[] = {
 	{"getpriority", l_getpriority},
 	{"setpriority", l_setpriority},
+	{"setpgid", l_setpgid},
 	{"regcomp", l_regcomp},
 	{"regmatch", l_regmatch},
 	{"environ", l_environ},
+	{"mount", l_mount},
+	{"umount", l_umount},
 	{NULL, NULL}
 };
 

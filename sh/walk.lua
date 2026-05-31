@@ -4,10 +4,15 @@ local unistd = require("posix.unistd")
 local wait = require("posix.sys.wait")
 local fcntl = require("posix.fcntl")
 local signal = require("posix.signal")
+local notposix = require("notposix")
 local env = require("sh.env")
 local expand = require("sh.expand")
 
 local M = {}
+
+-- Shell's process group (for terminal control)
+local shell_pgid = unistd.getpgrp()
+local is_interactive = unistd.isatty(0) == 1
 
 -- Function table: name -> AST node
 local functions = {}
@@ -178,9 +183,16 @@ local function exec_simple(node)
 	-- External command: fork + exec
 	local pid = unistd.fork()
 	if pid == 0 then
-		-- Child: restore default signal handlers
+		-- Child: own process group + terminal control (interactive only)
+		if is_interactive then
+			notposix.setpgid(0, 0)
+			unistd.tcsetpgrp(0, unistd.getpid())
+		end
 		signal.signal(signal.SIGINT, signal.SIG_DFL)
 		signal.signal(signal.SIGQUIT, signal.SIG_DFL)
+		signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+		signal.signal(signal.SIGTTIN, signal.SIG_DFL)
+		signal.signal(signal.SIGTTOU, signal.SIG_DFL)
 		apply_redirections(node.redirs, node.heredoc_bodies)
 		local path = find_in_path(args[1])
 		if not path then
@@ -192,12 +204,16 @@ local function exec_simple(node)
 		unistd.execp(path, rest)
 		os.exit(127)
 	end
-	-- Parent: ignore SIGINT/SIGQUIT while waiting for foreground child
-	local old_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
-	local old_quit = signal.signal(signal.SIGQUIT, signal.SIG_IGN)
+	-- Parent: give terminal to child's group (interactive only)
+	if is_interactive then
+		notposix.setpgid(pid, pid)
+		unistd.tcsetpgrp(0, pid)
+	end
 	local _, reason, status = wait.wait(pid)
-	signal.signal(signal.SIGINT, old_int)
-	signal.signal(signal.SIGQUIT, old_quit)
+	-- Reclaim terminal
+	if is_interactive then
+		unistd.tcsetpgrp(0, shell_pgid)
+	end
 	if reason == "exited" then return status
 	elseif reason == "killed" then return 128 + status
 	else return 1 end

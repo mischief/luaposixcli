@@ -105,10 +105,28 @@ local function list_dir(path, show_header)
 		end
 	end
 
-	if long or one_per_line then
+	if long or one_per_line or unistd.isatty(1) ~= 1 then
 		unistd.write(1, table.concat(output, "\n") .. "\n")
 	else
-		unistd.write(1, table.concat(output, "  ") .. "\n")
+		-- Terminal: columnated output
+		local cols = tonumber(os.getenv("COLUMNS")) or 80
+		local maxw = 0
+		for _, name in ipairs(output) do
+			if #name > maxw then maxw = #name end
+		end
+		local cw = maxw + 2
+		local ncols = math.max(1, math.floor(cols / cw))
+		local nrows = math.ceil(#output / ncols)
+		for r = 1, nrows do
+			local parts = {}
+			for c = 0, ncols - 1 do
+				local idx = c * nrows + r
+				if idx <= #output then
+					parts[#parts + 1] = string.format("%-" .. cw .. "s", output[idx])
+				end
+			end
+			unistd.write(1, table.concat(parts):gsub("%s+$", "") .. "\n")
+		end
 	end
 
 	for _, sub in ipairs(subdirs) do
@@ -117,26 +135,29 @@ local function list_dir(path, show_header)
 end
 
 for _, path in ipairs(paths) do
-	local s = stat.lstat(path)
+	local s = stat.stat(path)
+	local ls = stat.lstat(path)
 	if not s then
 		unistd.write(2, "ls: " .. path .. ": No such file or directory\n")
 		os.exit(1)
 	end
 
 	if stat.S_ISDIR(s.st_mode) == 0 then
+		-- Not a directory: show the file (use lstat for display)
+		local info = ls or s
 		if long then
-			local pw = pwd.getpwuid(s.st_uid)
-			local gr = grp.getgrgid(s.st_gid)
+			local pw = pwd.getpwuid(info.st_uid)
+			local gr = grp.getgrgid(info.st_gid)
 			unistd.write(
 				1,
 				string.format(
 					"%s %2d %-8s %-8s %8d %s %s\n",
-					mode_string(s.st_mode),
-					s.st_nlink,
-					pw and pw.pw_name or tostring(s.st_uid),
-					gr and gr.gr_name or tostring(s.st_gid),
-					s.st_size,
-					format_time(s.st_mtime),
+					mode_string(info.st_mode),
+					info.st_nlink,
+					pw and pw.pw_name or tostring(info.st_uid),
+					gr and gr.gr_name or tostring(info.st_gid),
+					info.st_size,
+					format_time(info.st_mtime),
 					path
 				)
 			)

@@ -350,7 +350,7 @@ local function read_line()
 			buf = {}
 			unistd.write(2, "\n")
 			redraw()
-			ch = nil
+			goto continue
 		end
 
 		if not ch or ch == "" then
@@ -498,6 +498,7 @@ local function read_line()
 			buf[#buf + 1] = ch
 			unistd.write(2, ch)
 		end
+		::continue::
 	end
 end
 

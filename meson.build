@@ -69,6 +69,7 @@ foreach u : [
   'awk',
   'sh',
   'make',
+  'ed',
 ]
   subdir(u)
 endforeach

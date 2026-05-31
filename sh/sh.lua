@@ -422,6 +422,8 @@ local function read_line()
 	end
 end
 
+unistd.write(1, "sh: ready (pid " .. tostring(unistd.getpid()) .. ")\n")
+
 while true do
 	prompt()
 	local line = read_line()

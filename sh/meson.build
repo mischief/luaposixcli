@@ -2,7 +2,7 @@
 busted = find_program('busted')
 
 sh_test_env = environment()
-sh_test_env.append('LUA_CPATH', meson.project_build_root() / '?.so', separator: ';')
+sh_test_env.append('LUA_CPATH', meson.project_build_root() / '?.so;;', separator: ';')
 
 install_data('sh.lua',
   rename: 'sh',

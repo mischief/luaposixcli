@@ -282,6 +282,9 @@ local function complete_filename(prefix)
 	return matches
 end
 
+local history = {}
+local history_pos = 1
+
 local function read_line()
 	if not interactive then
 		-- non-interactive: simple read
@@ -415,6 +418,48 @@ local function read_line()
 			if #buf == 0 then
 				return nil
 			end
+		elseif b == 21 then -- Ctrl-U: clear line
+			buf = {}
+			redraw()
+		elseif b == 23 then -- Ctrl-W: delete last word
+			while #buf > 0 and buf[#buf] == " " do table.remove(buf) end
+			while #buf > 0 and buf[#buf] ~= " " do table.remove(buf) end
+			redraw()
+		elseif b == 1 then -- Ctrl-A: (no cursor movement yet, just beep)
+		elseif b == 5 then -- Ctrl-E: (no cursor movement yet)
+		elseif b == 11 then -- Ctrl-K: kill to end (no-op without cursor pos)
+		elseif b == 12 then -- Ctrl-L: clear screen, redraw
+			unistd.write(2, "\027[2J\027[H")
+			redraw()
+		elseif b == 27 then -- Escape sequence (arrows)
+			local c2 = unistd.read(0, 1)
+			if c2 == "[" then
+				local c3 = unistd.read(0, 1)
+				if c3 == "A" then -- Up arrow: previous history
+					if history_pos > 1 then
+						history_pos = history_pos - 1
+						buf = {}
+						for i = 1, #history[history_pos] do
+							buf[i] = history[history_pos]:sub(i, i)
+						end
+						redraw()
+					end
+				elseif c3 == "B" then -- Down arrow: next history
+					if history_pos < #history then
+						history_pos = history_pos + 1
+						buf = {}
+						for i = 1, #history[history_pos] do
+							buf[i] = history[history_pos]:sub(i, i)
+						end
+						redraw()
+					elseif history_pos == #history then
+						history_pos = #history + 1
+						buf = {}
+						redraw()
+					end
+				-- C (right) and D (left) ignored for now (no cursor pos)
+				end
+			end
 		elseif b >= 32 then -- printable
 			buf[#buf + 1] = ch
 			unistd.write(2, ch)
@@ -425,10 +470,16 @@ end
 
 while true do
 	prompt()
+	history_pos = #history + 1
 	local line = read_line()
 	if not line then
 		break
 	end
+	-- Add to history (skip empty and duplicates)
+	if line ~= "" and line ~= history[#history] then
+		history[#history + 1] = line
+	end
+	history_pos = #history + 1
 	-- backslash continuation
 	while line:sub(-1) == "\\" do
 		line = line:sub(1, -2)

@@ -197,15 +197,12 @@ local function exec_simple(node)
 		unistd.execp(path, rest)
 		os.exit(127)
 	end
-	-- Parent: ignore SIGINT/SIGQUIT while waiting for foreground child
-	local old_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
-	local old_quit = signal.signal(signal.SIGQUIT, signal.SIG_IGN)
+	-- Parent: wait for child. Shell's SIGINT handler stays active
+	-- (children get SIG_DFL via the fork path above)
 	local _, reason, status
 	repeat
 		_, reason, status = wait.wait(pid)
 	until reason ~= nil
-	signal.signal(signal.SIGINT, old_int)
-	signal.signal(signal.SIGQUIT, old_quit)
 	if reason == "exited" then return status
 	elseif reason == "killed" then return 128 + status
 	else return 1 end

@@ -377,10 +377,10 @@ local function read_line()
 			-- find current word (last space-delimited token)
 			local line = table.concat(buf)
 			local prefix = line:match("(%S+)$") or ""
-			-- Use command completion if on first word, filename otherwise
+			-- Use command completion if on first word (and not an absolute/relative path)
 			local matches
 			local before_prefix = line:sub(1, #line - #prefix)
-			if not before_prefix:find("%S") then
+			if not before_prefix:find("%S") and not prefix:match("^[./]") then
 				-- First word: complete from PATH + builtins
 				matches = {}
 				local seen = {}

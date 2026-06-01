@@ -5,6 +5,7 @@ local stat = require("posix.sys.stat")
 local unistd = require("posix.unistd")
 local pwd = require("posix.pwd")
 local grp = require("posix.grp")
+local notposix = require("notposix")
 
 local show_all = false
 local long = false
@@ -109,7 +110,7 @@ local function list_dir(path, show_header)
 		unistd.write(1, table.concat(output, "\n") .. "\n")
 	else
 		-- Terminal: columnated output
-		local cols = tonumber(os.getenv("COLUMNS")) or 80
+		local cols = notposix.winsize(1) or 80
 		local maxw = 0
 		for _, name in ipairs(output) do
 			if #name > maxw then maxw = #name end

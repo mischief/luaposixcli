@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/mount.h>
 #include <regex.h>
@@ -214,10 +215,27 @@ l_setpgid(lua_State *L)
 	return 1;
 }
 
+/* notposix.winsize([fd]) -> cols, rows or nil, errmsg */
+static int
+l_winsize(lua_State *L)
+{
+	int fd = luaL_optinteger(L, 1, 1);
+	struct winsize ws;
+	if (ioctl(fd, TIOCGWINSZ, &ws) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, ws.ws_col);
+	lua_pushinteger(L, ws.ws_row);
+	return 2;
+}
+
 static const luaL_Reg notposix_funcs[] = {
 	{"getpriority", l_getpriority},
 	{"setpriority", l_setpriority},
 	{"setpgid", l_setpgid},
+	{"winsize", l_winsize},
 	{"regcomp", l_regcomp},
 	{"regmatch", l_regmatch},
 	{"environ", l_environ},

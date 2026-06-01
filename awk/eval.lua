@@ -37,7 +37,7 @@ function M.new()
 	self.regex_cache = {}
 
 	-- Load notposix for POSIX regex support
-	local ok, np = pcall(require, "notposix")
+	local ok, np = pcall(require, "luaposixcli.sys")
 	if ok then
 		self.notposix = np
 	end

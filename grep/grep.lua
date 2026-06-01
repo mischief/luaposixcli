@@ -2,7 +2,7 @@
 -- SPDX-License-Identifier: ISC
 local unistd   = require("posix.unistd")
 local fcntl    = require("posix.fcntl")
-local notposix = require("notposix")
+local notposix = require("luaposixcli.sys")
 
 local invert = false
 local count_only = false

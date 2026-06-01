@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: ISC
-local notposix = require("notposix")
+local notposix = require("luaposixcli.sys")
 
 describe("notposix", function()
 

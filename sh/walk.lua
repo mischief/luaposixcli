@@ -4,7 +4,7 @@ local unistd = require("posix.unistd")
 local wait = require("posix.sys.wait")
 local fcntl = require("posix.fcntl")
 local signal = require("posix.signal")
-local notposix = require("notposix")
+local notposix = require("luaposixcli.sys")
 local env = require("sh.env")
 local expand = require("sh.expand")
 

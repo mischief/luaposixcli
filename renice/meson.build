@@ -8,5 +8,4 @@ install_data('renice.lua',
 
 test('renice', sh, args: [meson.current_source_dir() / 'test.sh'],
   env: ['LUA_CPATH=' + meson.project_build_root() / '?.so;;'],
-  depends: notposix_lib,
 )

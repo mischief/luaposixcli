@@ -34,5 +34,4 @@ test('make.eval', busted,
 
 test('make.sh', sh, args: [meson.current_source_dir() / 'test.sh'],
   env: ['LUA_CPATH=' + meson.project_build_root() / '?.so;;'],
-  depends: notposix_lib,
 )

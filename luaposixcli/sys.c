@@ -245,7 +245,7 @@ static const luaL_Reg notposix_funcs[] = {
 };
 
 int
-luaopen_notposix(lua_State *L)
+luaopen_luaposixcli_sys(lua_State *L)
 {
 	/* create regex metatable */
 	luaL_newmetatable(L, REGEX_MT);

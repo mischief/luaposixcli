@@ -5,7 +5,7 @@ local stat = require("posix.sys.stat")
 local unistd = require("posix.unistd")
 local pwd = require("posix.pwd")
 local grp = require("posix.grp")
-local notposix = require("notposix")
+local notposix = require("luaposixcli.sys")
 
 local show_all = false
 local long = false

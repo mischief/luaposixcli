@@ -148,13 +148,233 @@ local function lookup_length(name)
 	return tostring(#val)
 end
 
--- $VAR, ${VAR}, ${#VAR}, $? etc.
-local dollar_exp =
-	(P("${#") * C(varname) * P("}")) / lookup_length +
-	(P("${") * C(varname + special + lpeg.R("09") ^ 1) * P("}")) / lookup +
+-- Shell pattern matching for ${var%pat}, ${var#pat} etc.
+local function sh_pattern_to_lua(pat)
+	local res = ""
+	local i = 1
+	while i <= #pat do
+		local c = pat:sub(i, i)
+		if c == "*" then res = res .. ".*"
+		elseif c == "?" then res = res .. "."
+		elseif c == "[" then
+			local j = pat:find("]", i + 1, true)
+			if j then
+				res = res .. pat:sub(i, j)
+				i = j
+			else
+				res = res .. "%["
+			end
+		elseif c:match("[%(%)%.%%%+%-%^%$]") then
+			res = res .. "%" .. c
+		else
+			res = res .. c
+		end
+		i = i + 1
+	end
+	return res
+end
+
+-- Find matching } handling nested ${}, $(), quotes
+local function find_closing_brace(s, start)
+	local depth = 1
+	local i = start
+	while i <= #s do
+		local c = s:sub(i, i)
+		if c == "}" then
+			depth = depth - 1
+			if depth == 0 then return i end
+		elseif c == "$" and s:sub(i + 1, i + 1) == "{" then
+			depth = depth + 1
+			i = i + 1
+		elseif c == "$" and s:sub(i + 1, i + 1) == "(" then
+			-- skip nested $()
+			local d = 1
+			i = i + 2
+			while i <= #s and d > 0 do
+				if s:sub(i, i) == "(" then d = d + 1
+				elseif s:sub(i, i) == ")" then d = d - 1 end
+				i = i + 1
+			end
+			i = i - 1
+		elseif c == "'" then
+			i = i + 1
+			while i <= #s and s:sub(i, i) ~= "'" do i = i + 1 end
+		elseif c == '"' then
+			i = i + 1
+			while i <= #s do
+				local dc = s:sub(i, i)
+				if dc == '"' then break end
+				if dc == "\\" then i = i + 1 end
+				i = i + 1
+			end
+		elseif c == "\\" then
+			i = i + 1
+		end
+		i = i + 1
+	end
+	return nil
+end
+
+-- forward declaration for recursive expansion
+local word
+
+-- Match-time capture for complex ${...} expansions
+local brace_exp = Cmt(P("${"), function(s, p)
+	-- p is after "${"
+	-- Handle ${#var}
+	if s:sub(p, p) == "#" then
+		local name = s:match("^([%a_][%w_]*)", p + 1)
+		if name and s:sub(p + 1 + #name, p + 1 + #name) == "}" then
+			local val = env.get(name) or ""
+			return p + 2 + #name, tostring(#val)
+		end
+	end
+
+	-- Find the variable name (or special param)
+	local name, nend
+	name = s:match("^([%a_][%w_]*)", p)
+	if name then
+		nend = p + #name
+	else
+		-- special parameter or positional
+		local sp = s:match("^([%?%$!%-@*#0])", p)
+		if sp then
+			name = sp
+			nend = p + 1
+		else
+			local digits = s:match("^(%d+)", p)
+			if digits then
+				name = digits
+				nend = p + #digits
+			else
+				return nil
+			end
+		end
+	end
+
+	-- Simple ${VAR}
+	if s:sub(nend, nend) == "}" then
+		return nend + 1, lookup(name)
+	end
+
+	-- Determine operator
+	local op
+	local two = s:sub(nend, nend + 1)
+	if two == ":-" or two == ":=" or two == ":?" or two == ":+" then
+		op = two
+		nend = nend + 2
+	elseif two == "%%" or two == "##" then
+		op = two
+		nend = nend + 2
+	else
+		local one = s:sub(nend, nend)
+		if one == "-" or one == "=" or one == "?" or one == "+" or one == "%" or one == "#" then
+			op = one
+			nend = nend + 1
+		else
+			return nil
+		end
+	end
+
+	-- Find matching closing brace
+	local brace_end = find_closing_brace(s, nend)
+	if not brace_end then return nil end
+
+	local word_str = s:sub(nend, brace_end - 1)
+	local val = env.get(name)
+
+	if op == ":-" then
+		if val == nil or val == "" then return brace_end + 1, word(word_str) end
+		return brace_end + 1, val
+	elseif op == "-" then
+		if val == nil then return brace_end + 1, word(word_str) end
+		return brace_end + 1, val
+	elseif op == ":=" then
+		if val == nil or val == "" then
+			local expanded = word(word_str)
+			env.set(name, expanded)
+			return brace_end + 1, expanded
+		end
+		return brace_end + 1, val
+	elseif op == "=" then
+		if val == nil then
+			local expanded = word(word_str)
+			env.set(name, expanded)
+			return brace_end + 1, expanded
+		end
+		return brace_end + 1, val
+	elseif op == ":?" then
+		if val == nil or val == "" then
+			local msg = word_str ~= "" and word(word_str) or (name .. ": parameter null or not set")
+			require("posix.unistd").write(2, "sh: " .. name .. ": " .. msg .. "\n")
+			return brace_end + 1, ""
+		end
+		return brace_end + 1, val
+	elseif op == "?" then
+		if val == nil then
+			local msg = word_str ~= "" and word(word_str) or (name .. ": parameter not set")
+			require("posix.unistd").write(2, "sh: " .. name .. ": " .. msg .. "\n")
+			return brace_end + 1, ""
+		end
+		return brace_end + 1, val
+	elseif op == ":+" then
+		if val ~= nil and val ~= "" then return brace_end + 1, word(word_str) end
+		return brace_end + 1, ""
+	elseif op == "+" then
+		if val ~= nil then return brace_end + 1, word(word_str) end
+		return brace_end + 1, ""
+	elseif op == "%%" then
+		val = val or ""
+		local pat = sh_pattern_to_lua(word(word_str))
+		-- largest suffix: try removing from position 1..#val
+		for i = 1, #val do
+			if val:sub(i):match("^" .. pat .. "$") then
+				return brace_end + 1, val:sub(1, i - 1)
+			end
+		end
+		return brace_end + 1, val
+	elseif op == "%" then
+		val = val or ""
+		local pat = sh_pattern_to_lua(word(word_str))
+		-- smallest suffix: try removing from end
+		for i = #val, 1, -1 do
+			if val:sub(i):match("^" .. pat .. "$") then
+				return brace_end + 1, val:sub(1, i - 1)
+			end
+		end
+		return brace_end + 1, val
+	elseif op == "##" then
+		val = val or ""
+		local pat = sh_pattern_to_lua(word(word_str))
+		-- largest prefix: try from longest
+		for i = #val, 1, -1 do
+			if val:sub(1, i):match("^" .. pat .. "$") then
+				return brace_end + 1, val:sub(i + 1)
+			end
+		end
+		return brace_end + 1, val
+	elseif op == "#" then
+		val = val or ""
+		local pat = sh_pattern_to_lua(word(word_str))
+		-- smallest prefix
+		for i = 1, #val do
+			if val:sub(1, i):match("^" .. pat .. "$") then
+				return brace_end + 1, val:sub(i + 1)
+			end
+		end
+		return brace_end + 1, val
+	end
+	return nil
+end)
+
+-- $VAR, $?, $1, etc. (simple forms without braces)
+local dollar_simple =
 	(P("$") * C(special)) / lookup +
 	(P("$") * C(lpeg.R("09"))) / lookup +
 	(P("$") * C(varname)) / lookup
+
+-- Combined dollar expansion: try brace_exp first, then simple
+local dollar_exp = brace_exp + dollar_simple
 
 -- single-quoted: literal (no expansion)
 local sq_lit = P("'") * C((1 - P("'")) ^ 0) * P("'")
@@ -170,7 +390,7 @@ local unquoted = cmdsub_pat + dollar_exp + C(1 - lpeg.S("'\""))
 -- full word
 local word_pat = Ct((sq_lit + dq_lit + unquoted) ^ 0) / table.concat
 
-local function word(s)
+word = function(s)
 	return lpeg.match(word_pat, s) or s
 end
 

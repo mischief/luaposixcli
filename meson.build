@@ -18,17 +18,11 @@ if not lua_dep.found()
   lua_dep = dependency('lua')
 endif
 
-subdir('luaposixcli')
-
 lua_prog = find_program(lua_name)
 busted = find_program('busted')
-test('luaposixcli.sys', busted,
-  args: ['--lua=' + lua_name, '--cpath=' + meson.project_build_root() / '?.so',
-         meson.current_source_dir() / 'notposix_test.lua'],
-  workdir: meson.project_source_root(),
-)
-
 sh = find_program('sh')
+
+subdir('luaposixcli')
 
 foreach u : [
   'true', 'false', 'echo', 'cat', 'pwd',

@@ -278,10 +278,37 @@ local builtins = {
 		return tonumber(env.get("?")) or 0
 	end,
 	["command"] = function(args)
-		-- Skip functions, run builtin or external directly
+		-- command [-v|-V] cmd [args...]
 		if #args < 2 then return 0 end
+		local mode = nil
+		local start = 2
+		if args[2] == "-v" then mode = "v"; start = 3
+		elseif args[2] == "-V" then mode = "V"; start = 3
+		end
+		if mode then
+			if not args[start] then return 1 end
+			local name = args[start]
+			-- Check builtins
+			if builtins[name] then
+				if mode == "v" then unistd.write(1, name .. "\n")
+				else unistd.write(1, name .. " is a shell builtin\n") end
+				return 0
+			end
+			-- Check PATH
+			local p = env.get("PATH") or "/bin:/usr/bin"
+			for dir in p:gmatch("[^:]+") do
+				local full = dir .. "/" .. name
+				if unistd.access(full, "x") == 0 then
+					if mode == "v" then unistd.write(1, full .. "\n")
+					else unistd.write(1, name .. " is " .. full .. "\n") end
+					return 0
+				end
+			end
+			return 1
+		end
+		-- command cmd [args...]: skip functions, run builtin or external
 		local cmd_args = {}
-		for i = 2, #args do cmd_args[#cmd_args + 1] = args[i] end
+		for i = start, #args do cmd_args[#cmd_args + 1] = args[i] end
 		-- Check builtins (skip functions)
 		if builtins[cmd_args[1]] then
 			return builtins[cmd_args[1]](cmd_args)

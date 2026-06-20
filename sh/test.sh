@@ -15,7 +15,7 @@ SH="lua5.4 $D/sh.lua"
 [ "$($SH -c 'echo "back\\slash"')" = 'back\slash' ] &&
 [ "$($SH -c "echo 'quotes \"inside\" singles'")" = 'quotes "inside" singles' ] &&
 # glob tests (use absolute path since meson may run from build dir)
-[ "$($SH -c "echo $ROOT/sh/e*.lua")" = "$ROOT/sh/env.lua $ROOT/sh/exec.lua $ROOT/sh/expand.lua" ] &&
+[ "$($SH -c "echo $ROOT/sh/e*.lua")" = "$ROOT/sh/env.lua $ROOT/sh/expand.lua" ] &&
 [ "$($SH -c 'echo "sh/*.lua"')" = "sh/*.lua" ] &&
 [ "$($SH -c "echo $ROOT/sh/[el]*.lua" | wc -w)" -gt 3 ] &&
 # read builtin

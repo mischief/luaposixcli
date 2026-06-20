@@ -13,7 +13,7 @@ local dirent = require("posix.dirent")
 local stat = require("posix.sys.stat")
 local signal = require("posix.signal")
 local lexer = require("sh.lexer")
-local exec = require("sh.exec")
+local walk_mod = require("sh.walk")
 local env = require("sh.env")
 local expand = require("sh.expand")
 
@@ -385,7 +385,7 @@ local function read_line()
 				matches = {}
 				local seen = {}
 				-- builtins
-				local builtins = exec.get_builtins()
+				local builtins = walk_mod.get_builtins()
 				for name in pairs(builtins) do
 					if name:sub(1, #prefix) == prefix and not seen[name] then
 						matches[#matches + 1] = name

@@ -11,7 +11,7 @@ install_data('sh.lua',
 )
 
 install_data(
-  'lexer.lua', 'parse.lua', 'walk.lua', 'exec.lua', 'env.lua', 'expand.lua', 'compound.lua', 'test.lua',
+  'lexer.lua', 'parse.lua', 'walk.lua', 'env.lua', 'expand.lua', 'compound.lua', 'test.lua',
   install_dir: lua_mod_dir / 'sh',
 )
 
@@ -60,6 +60,12 @@ test('sh.compound_multiline', busted,
   workdir: meson.project_source_root(),
   env: sh_test_env,
   timeout: 10,
+)
+
+test('sh.prefix_assign', busted,
+  args: ['--lua=' + lua_name, meson.current_source_dir() / 'prefix_assign_test.lua'],
+  workdir: meson.project_source_root(),
+  env: sh_test_env,
 )
 
 test('sh', sh, args: [meson.current_source_dir() / 'test.sh'])

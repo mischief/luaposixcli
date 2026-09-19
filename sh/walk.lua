@@ -23,6 +23,28 @@ local functions = {}
 -- Forward declaration
 local walk
 
+-- set -e support. A failure is ignored while this counter is above zero:
+-- conditions of if/while/until, every command of an AND-OR list but the last,
+-- and a pipeline with a leading "!".
+local errexit_off = 0
+
+local function walk_quiet(node)
+	errexit_off = errexit_off + 1
+	local ok, status = pcall(walk, node)
+	errexit_off = errexit_off - 1
+	if not ok then error(status, 0) end
+	return status
+end
+
+local function check_errexit(status)
+	if status ~= 0 and errexit_off == 0 and env.get_opt("e") then
+		env.set_status(status)
+		env.run_exit_trap()
+		os.exit(status)
+	end
+	return status
+end
+
 -- Apply redirections, returns saved FDs for restore
 local function apply_redirections(redirs, heredoc_bodies)
 	if not redirs or #redirs == 0 then return {} end
@@ -160,16 +182,49 @@ local function builtin_unset(args)
 	return 0
 end
 
+-- set [-o|+o] [-abCefmnuvx] [--] [arg...]
+-- Options toggle shell flags. "--" or a first non-option operand makes the
+-- remaining arguments the positional parameters.
 local function builtin_set(args)
-	for i = 2, #args do
+	if #args == 1 then
+		local names = {}
+		for name in env.all_vars() do names[#names + 1] = name end
+		table.sort(names)
+		for _, name in ipairs(names) do
+			unistd.write(1, name .. "=" .. (env.get(name) or "") .. "\n")
+		end
+		return 0
+	end
+	local i = 2
+	local operands, have_operands = nil, false
+	while i <= #args do
 		local a = args[i]
-		local mode = a:sub(1, 1)
-		if mode == "-" or mode == "+" then
+		if a == "--" then
+			operands, have_operands = {}, true
+			i = i + 1
+			break
+		elseif (a:sub(1, 1) == "-" or a:sub(1, 1) == "+") and #a > 1 then
+			local on = a:sub(1, 1) == "-"
 			for j = 2, #a do
-				env.set_opt(a:sub(j, j), mode == "-")
+				local flag = a:sub(j, j)
+				if flag == "o" then
+					-- -o/+o with an option name: consume the name, ignore it
+					if args[i + 1] and args[i + 1]:sub(1, 1) ~= "-" then i = i + 1 end
+				else
+					env.set_opt(flag, on)
+				end
 			end
+			i = i + 1
+		else
+			operands, have_operands = {}, true
+			break
 		end
 	end
+	if not have_operands then return 0 end
+	for j = i, #args do operands[#operands + 1] = args[j] end
+	local argv = { env.get_argv()[1] or "sh" }
+	for _, v in ipairs(operands) do argv[#argv + 1] = v end
+	env.set_argv(argv)
 	return 0
 end
 
@@ -697,10 +752,13 @@ local function exec_simple(node)
 	if pid == 0 then
 		signal.signal(signal.SIGINT, signal.SIG_DFL)
 		signal.signal(signal.SIGQUIT, signal.SIG_DFL)
-		-- apply prefix assignments to child environment only
+		-- apply prefix assignments to child environment only.
+		-- Each is visible to the ones that follow it (POSIX).
 		for _, a in ipairs(assigns) do
 			local name, val = expand.parse_assignment(a)
-			stdlib.setenv(name, expand.word(val), true)
+			local expanded_val = expand.word(val)
+			env.set(name, expanded_val)
+			stdlib.setenv(name, expanded_val, true)
 		end
 		apply_redirections(node.redirs, node.heredoc_bodies)
 		local path = find_in_path(args[1])
@@ -728,7 +786,7 @@ end
 local function exec_pipeline(node)
 	local cmds = node.cmds
 	if #cmds == 1 then
-		local status = walk(cmds[1])
+		local status = node.bang and walk_quiet(cmds[1]) or walk(cmds[1])
 		if node.bang then status = (status == 0) and 1 or 0 end
 		return status
 	end
@@ -776,13 +834,15 @@ function walk(node)
 	local t = node.type
 
 	if t == "simple" then
-		return exec_simple(node)
+		return check_errexit(exec_simple(node))
 
 	elseif t == "pipeline" then
-		return exec_pipeline(node)
+		local status = exec_pipeline(node)
+		if node.bang then return status end
+		return check_errexit(status)
 
 	elseif t == "and_or" then
-		local left_status = walk(node.left)
+		local left_status = walk_quiet(node.left)
 		env.set_status(left_status)
 		if node.op == "&&" then
 			if left_status == 0 then return walk(node.right) end
@@ -812,7 +872,7 @@ function walk(node)
 
 	elseif t == "if" then
 		local saved = apply_redirections(node.redirs)
-		local cond_status = walk(node.cond)
+		local cond_status = walk_quiet(node.cond)
 		env.set_status(cond_status)
 		local status
 		if cond_status == 0 then
@@ -840,7 +900,7 @@ function walk(node)
 		local saved = apply_redirections(node.redirs)
 		local status = 0
 		while true do
-			local cs = walk(node.cond)
+			local cs = walk_quiet(node.cond)
 			env.set_status(cs)
 			if cs ~= 0 then break end
 			status = walk(node.body)
@@ -864,7 +924,7 @@ function walk(node)
 		local saved = apply_redirections(node.redirs)
 		local status = 0
 		while true do
-			local cs = walk(node.cond)
+			local cs = walk_quiet(node.cond)
 			env.set_status(cs)
 			if cs == 0 then break end
 			status = walk(node.body)

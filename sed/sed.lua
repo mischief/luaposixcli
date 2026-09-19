@@ -149,7 +149,10 @@ if #lines > 0 and lines[#lines] == "" then table.remove(lines) end
 
 -- execute
 local in_range = {}
-for lineno, line in ipairs(lines) do
+-- Lua 5.5 makes the control variable read only, so the pattern space is
+-- a local copy of it.
+for lineno, raw in ipairs(lines) do
+	local line = raw
 	local last = (lineno == #lines)
 	local output = true
 	local print_extra = false

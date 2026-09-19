@@ -120,7 +120,12 @@ local function sh_pattern_to_lua(pat)
 	local i = 1
 	while i <= #pat do
 		local c = pat:sub(i, i)
-		if c == "*" then res = res .. ".*"
+		if c == "\\" and i < #pat then
+			-- backslash makes the next character literal
+			local nxt = pat:sub(i + 1, i + 1)
+			res = res .. (nxt:match("%w") and nxt or ("%" .. nxt))
+			i = i + 1
+		elseif c == "*" then res = res .. ".*"
 		elseif c == "?" then res = res .. "."
 		elseif c == "[" then
 			local j = pat:find("]", i + 1, true)
@@ -177,9 +182,11 @@ local word
 -- Match-time capture for complex ${...} expansions
 local brace_exp = Cmt(P("${"), function(s, p)
 	-- p is after "${"
-	-- Handle ${#var}
+	-- Handle ${#var}, including ${#0} and the other special parameters
 	if s:sub(p, p) == "#" then
 		local name = s:match("^([%a_][%w_]*)", p + 1)
+			or s:match("^(%d+)", p + 1)
+			or s:match("^([%?%$!%-@*])", p + 1)
 		if name and s:sub(p + 1 + #name, p + 1 + #name) == "}" then
 			local val = env.get(name) or ""
 			return p + 2 + #name, tostring(#val)
@@ -211,6 +218,26 @@ local brace_exp = Cmt(P("${"), function(s, p)
 	-- Simple ${VAR}
 	if s:sub(nend, nend) == "}" then
 		return nend + 1, lookup(name)
+	end
+
+	-- ${var:offset} and ${var:offset:length} (not POSIX, but widely used)
+	if s:sub(nend, nend) == ":" and s:sub(nend + 1, nend + 1):match("[%d%s%$%(]") then
+		local brace_end = find_closing_brace(s, nend + 1)
+		if brace_end then
+			local spec = s:sub(nend + 1, brace_end - 1)
+			local off_str, len_str = spec:match("^([^:]*):(.*)$")
+			if not off_str then off_str = spec end
+			local off = tonumber(word(off_str))
+			local len = len_str and tonumber(word(len_str))
+			if off and (len_str == nil or len) then
+				local val = env.get(name) or ""
+				if off < 0 then off = math.max(#val + off, 0) end
+				local first = off + 1
+				local last = len and (first + len - 1) or #val
+				if len and len < 0 then last = #val + len end
+				return brace_end + 1, val:sub(first, last)
+			end
+		end
 	end
 
 	-- Determine operator
@@ -261,15 +288,15 @@ local brace_exp = Cmt(P("${"), function(s, p)
 		return brace_end + 1, val
 	elseif op == ":?" then
 		if val == nil or val == "" then
-			local msg = word_str ~= "" and word(word_str) or (name .. ": parameter null or not set")
-			require("posix.unistd").write(2, "sh: " .. name .. ": " .. msg .. "\n")
+			local msg = word_str ~= "" and word(word_str) or "parameter null or not set"
+			fatal(name .. ": " .. msg, 2)
 			return brace_end + 1, ""
 		end
 		return brace_end + 1, val
 	elseif op == "?" then
 		if val == nil then
-			local msg = word_str ~= "" and word(word_str) or (name .. ": parameter not set")
-			require("posix.unistd").write(2, "sh: " .. name .. ": " .. msg .. "\n")
+			local msg = word_str ~= "" and word(word_str) or "parameter not set"
+			fatal(name .. ": " .. msg, 2)
 			return brace_end + 1, ""
 		end
 		return brace_end + 1, val

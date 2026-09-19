@@ -4,6 +4,8 @@ local lpeg = require("lpeg")
 local P, S, C, Ct, Cmt = lpeg.P, lpeg.S, lpeg.C, lpeg.Ct, lpeg.Cmt
 
 local env = require("sh.env")
+local lexer = require("sh.lexer")
+local unistd = require("posix.unistd")
 
 local special = lpeg.S("?$!-@*#0")
 local namechar = lpeg.R("az", "AZ", "09") + P("_")
@@ -21,7 +23,6 @@ local function set_sh_path(path)
 	sh_path = path
 end
 
-local unistd = require("posix.unistd")
 local wait = require("posix.sys.wait")
 
 -- callback to execute a command string in the current shell
@@ -121,22 +122,9 @@ local cmdsub_pat = Cmt(P("$"), function(s, p)
 		return nil
 	end
 	-- Regular command substitution $(...)
-	local depth = 0
-	local i = p -- at the '('
-	while i <= #s do
-		local c = s:sub(i, i)
-		if c == "(" then
-			depth = depth + 1
-		elseif c == ")" then
-			depth = depth - 1
-			if depth == 0 then
-				local inner = s:sub(p + 1, i - 1)
-				return i + 1, cmdsub(inner)
-			end
-		end
-		i = i + 1
-	end
-	return nil
+	local e = lexer.skip_cmdsub(s, p)
+	if not e then return nil end
+	return e, cmdsub(s:sub(p + 1, e - 2))
 end)
 
 -- We need to try cmdsub before dollar_exp since both start with $
@@ -187,26 +175,16 @@ local function find_closing_brace(s, start)
 			depth = depth + 1
 			i = i + 1
 		elseif c == "$" and s:sub(i + 1, i + 1) == "(" then
-			-- skip nested $()
-			local d = 1
-			i = i + 2
-			while i <= #s and d > 0 do
-				if s:sub(i, i) == "(" then d = d + 1
-				elseif s:sub(i, i) == ")" then d = d - 1 end
-				i = i + 1
-			end
-			i = i - 1
+			local e = lexer.skip_cmdsub(s, i + 1)
+			if not e then return nil end
+			i = e - 1
 		elseif c == "'" then
 			i = i + 1
 			while i <= #s and s:sub(i, i) ~= "'" do i = i + 1 end
 		elseif c == '"' then
-			i = i + 1
-			while i <= #s do
-				local dc = s:sub(i, i)
-				if dc == '"' then break end
-				if dc == "\\" then i = i + 1 end
-				i = i + 1
-			end
+			local e = lexer.skip_dquote(s, i + 1)
+			if not e then return nil end
+			i = e - 1
 		elseif c == "\\" then
 			i = i + 1
 		end

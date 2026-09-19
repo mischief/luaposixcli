@@ -10,20 +10,69 @@ local comment = P("#") * (1 - newline) ^ 0
 -- single-quoted: literal content, no escapes. Preserve quotes for expand phase.
 local sq = C(P("'") * (1 - P("'")) ^ 0 * P("'"))
 
--- double-quoted: find matching close quote, respecting \" escapes
--- Captures the full "..." including quotes for the expand phase
-local dq = Cmt(P('"'), function(s, p)
-	local i = p
+local skip_cmdsub
+
+-- Skip a double-quoted string. i is the index just past the opening quote.
+-- Returns the index just past the closing quote, or nil if unterminated.
+-- A $( ) or ` ` inside carries its own quoting, so it is skipped whole.
+local function skip_dquote(s, i)
 	while i <= #s do
 		local c = s:sub(i, i)
-		if c == '"' then return i + 1, s:sub(p - 1, i) end
-		if c == "\\" and i + 1 <= #s then
-			i = i + 2 -- skip escaped char
+		if c == '"' then
+			return i + 1
+		elseif c == "\\" then
+			i = i + 2
+		elseif c == "$" and s:sub(i + 1, i + 1) == "(" then
+			local j = skip_cmdsub(s, i + 1)
+			if not j then return nil end
+			i = j
+		elseif c == "`" then
+			local j = s:find("`", i + 1, true)
+			if not j then return nil end
+			i = j + 1
 		else
 			i = i + 1
 		end
 	end
-	return nil -- unterminated
+	return nil
+end
+
+-- Skip a command substitution. i is the index of the opening "(".
+-- Returns the index just past the matching ")", or nil if unterminated.
+-- Quoted text inside does not count towards the paren depth.
+function skip_cmdsub(s, i)
+	local depth = 0
+	while i <= #s do
+		local c = s:sub(i, i)
+		if c == "'" then
+			local j = s:find("'", i + 1, true)
+			if not j then return nil end
+			i = j + 1
+		elseif c == '"' then
+			local j = skip_dquote(s, i + 1)
+			if not j then return nil end
+			i = j
+		elseif c == "\\" then
+			i = i + 2
+		else
+			if c == "(" then
+				depth = depth + 1
+			elseif c == ")" then
+				depth = depth - 1
+				if depth == 0 then return i + 1 end
+			end
+			i = i + 1
+		end
+	end
+	return nil
+end
+
+-- double-quoted: find matching close quote, respecting \" escapes.
+-- Captures the full "..." including quotes for the expand phase
+local dq = Cmt(P('"'), function(s, p)
+	local e = skip_dquote(s, p)
+	if not e then return nil end
+	return e, s:sub(p - 1, e - 1)
 end)
 
 -- backslash escape: consume backslash, capture next char literally
@@ -37,21 +86,9 @@ local cmdsub = Cmt(P("$"), function(s, p)
 	if s:sub(p, p) ~= "(" then
 		return nil
 	end
-	local depth = 0
-	local i = p
-	while i <= #s do
-		local c = s:sub(i, i)
-		if c == "(" then
-			depth = depth + 1
-		elseif c == ")" then
-			depth = depth - 1
-			if depth == 0 then
-				return i + 1, s:sub(p - 1, i) -- capture "$(...)"
-			end
-		end
-		i = i + 1
-	end
-	return nil
+	local e = skip_cmdsub(s, p)
+	if not e then return nil end
+	return e, s:sub(p - 1, e - 1) -- capture "$(...)"
 end)
 
 -- backtick command substitution: capture as $(...) equivalent
@@ -177,4 +214,9 @@ local function tokenize_flat(line)
 	return result
 end
 
-return { tokenize = tokenize, tokenize_flat = tokenize_flat }
+return {
+	tokenize = tokenize,
+	tokenize_flat = tokenize_flat,
+	skip_dquote = skip_dquote,
+	skip_cmdsub = skip_cmdsub,
+}

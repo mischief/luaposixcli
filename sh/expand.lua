@@ -365,6 +365,17 @@ local dq_lit = P('"') * Ct(dq_piece ^ 0) * P('"') / table.concat
 -- unquoted piece
 local unquoted = cmdsub_pat + dollar_exp + C(1 - lpeg.S("'\""))
 
+-- here-document body with an unquoted delimiter: expansions happen as in a
+-- double-quoted string, but a double quote is literal.
+local hd_escape = P("\\") * C(S("\\$`"))
+	+ P("\\") * P("\n") / ""
+	+ P("\\") * C(P(1)) / "\\%1"
+local hd_pat = Ct((cmdsub_pat + dollar_exp + hd_escape + C(1 - P("\\"))) ^ 0) / table.concat
+
+local function heredoc(s)
+	return lpeg.match(hd_pat, s) or s
+end
+
 -- full word
 local word_pat = Ct((sq_lit + dq_lit + unquoted) ^ 0) / table.concat
 
@@ -434,6 +445,7 @@ end
 
 return {
 	word = word,
+	heredoc = heredoc,
 	glob_word = glob_word,
 	is_assignment = is_assignment,
 	parse_assignment = parse_assignment,

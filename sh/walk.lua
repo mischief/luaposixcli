@@ -80,14 +80,30 @@ local function apply_redirections(redirs, heredoc_bodies)
 			end
 		elseif r.op == "<<" then
 			if not fd then fd = 0 end
+			local hd = heredoc_bodies and r.heredoc_idx and heredoc_bodies[r.heredoc_idx]
 			local body = ""
-			if heredoc_bodies and r.heredoc_idx then
-				body = heredoc_bodies[r.heredoc_idx] or ""
+			if type(hd) == "table" then
+				body = hd.quoted and hd.text or expand.heredoc(hd.text)
+			elseif type(hd) == "string" then
+				body = hd
 			end
-			-- Create a pipe, write body, redirect read end to fd
+			-- Create a pipe, write body, redirect read end to fd.
+			-- A body larger than the pipe buffer needs a writer process,
+			-- or the write here blocks before the reader starts.
 			local pr, pw = unistd.pipe()
-			unistd.write(pw, body)
-			unistd.close(pw)
+			if #body > 4096 then
+				local pid = unistd.fork()
+				if pid == 0 then
+					unistd.close(pr)
+					unistd.write(pw, body)
+					unistd.close(pw)
+					os.exit(0)
+				end
+				unistd.close(pw)
+			else
+				unistd.write(pw, body)
+				unistd.close(pw)
+			end
 			saved[#saved + 1] = { fd = fd, saved = unistd.dup(fd) }
 			unistd.dup2(pr, fd)
 			unistd.close(pr)

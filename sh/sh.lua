@@ -72,7 +72,7 @@ local compound = require("sh.compound")
 local parse = require("sh.parse")
 local walker = require("sh.walk")
 
-local function run_line(line, heredoc_lines)
+local function run_line(line, heredoc_bodies)
 	local flat = lexer.tokenize_flat(line)
 	if not flat then
 		unistd.write(2, "sh: parse error\n")
@@ -86,25 +86,19 @@ local function run_line(line, heredoc_lines)
 		end
 		return
 	end
-	-- Collect here-doc bodies from heredoc_lines if provided
-	if heredoc_lines then
+	-- Attach here-doc bodies, in the order the delimiters were written
+	if heredoc_bodies then
+		local next_body = 1
 		local function attach_heredocs(node)
 			if not node then return end
 			if node.type == "simple" and node.heredocs and #node.heredocs > 0 then
 				node.heredoc_bodies = {}
 				for _, hd in ipairs(node.heredocs) do
-					-- Find body in heredoc_lines
-					local body = {}
-					local found = false
-					local idx = 1
-					while idx <= #heredoc_lines do
-						local l = heredoc_lines[idx]
-						table.remove(heredoc_lines, idx)
-						if hd.strip then l = l:gsub("^\t+", "") end
-						if l == hd.delim then found = true; break end
-						body[#body + 1] = l
-					end
-					node.heredoc_bodies[#node.heredoc_bodies + 1] = table.concat(body, "\n") .. (found and "\n" or "")
+					node.heredoc_bodies[#node.heredoc_bodies + 1] = {
+						text = heredoc_bodies[next_body] or "",
+						quoted = hd.quoted,
+					}
+					next_body = next_body + 1
 				end
 			end
 			-- Recurse into child nodes
@@ -152,27 +146,37 @@ if script_file then
 
 	-- check if a string has balanced quotes
 	local function quotes_balanced(s)
-		local in_single = false
-		local in_double = false
 		local i = 1
 		while i <= #s do
 			local c = s:sub(i, i)
-			if c == "\\" and not in_single then
-				i = i + 1 -- skip escaped char
-			elseif c == "'" and not in_double then
-				in_single = not in_single
-			elseif c == '"' and not in_single then
-				in_double = not in_double
+			if c == "\\" then
+				i = i + 2
+			elseif c == "'" then
+				local j = s:find("'", i + 1, true)
+				if not j then return false end
+				i = j + 1
+			elseif c == '"' then
+				local e = lexer.skip_dquote(s, i + 1)
+				if not e then return false end
+				i = e
+			elseif c == "$" and s:sub(i + 1, i + 1) == "(" then
+				local e = lexer.skip_cmdsub(s, i + 1)
+				if not e then return false end
+				i = e
+			else
+				i = i + 1
 			end
-			i = i + 1
 		end
-		return not in_single and not in_double
+		return true
 	end
 
-	-- Split content into lines for indexed access
+	-- Split content into lines for indexed access. Blank lines are kept:
+	-- a here-document body may contain them.
 	local lines = {}
-	for l in content:gmatch("([^\n]*)\n?") do
-		if l ~= "" or #lines == 0 then lines[#lines + 1] = l end
+	do
+		local text = content
+		if text:sub(-1) ~= "\n" then text = text .. "\n" end
+		for l in text:gmatch("([^\n]*)\n") do lines[#lines + 1] = l end
 	end
 
 	-- Extract here-doc delimiters from a flat token list
@@ -182,11 +186,13 @@ if script_file then
 			if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
 				local strip = (flat[i] == "<<-")
 				local delim = flat[i + 1]
-				-- Strip quotes from delimiter
+				-- A quoted delimiter means the body is literal
+				local quoted = false
 				if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
+					quoted = true
 					delim = delim:sub(2, -2)
 				end
-				delims[#delims + 1] = { delim = delim, strip = strip }
+				delims[#delims + 1] = { delim = delim, strip = strip, quoted = quoted }
 			end
 		end
 		return delims
@@ -207,18 +213,20 @@ if script_file then
 				if flat and parse.is_complete(flat) then
 					-- Collect here-doc bodies
 					local delims = get_heredoc_delims(flat)
-					local heredoc_lines = {}
+					local bodies = {}
 					for _, hd in ipairs(delims) do
+						local body = {}
 						while li <= #lines do
 							local hl = lines[li]
 							li = li + 1
 							if hd.strip then hl = hl:gsub("^\t+", "") end
 							if hl == hd.delim then break end
-							heredoc_lines[#heredoc_lines + 1] = hl
+							body[#body + 1] = hl .. "\n"
 						end
+						bodies[#bodies + 1] = table.concat(body)
 					end
 					if pending ~= "" then
-						run_line(pending, #heredoc_lines > 0 and heredoc_lines or nil)
+						run_line(pending, #bodies > 0 and bodies or nil)
 					end
 					pending = ""
 				elseif not flat then
@@ -545,32 +553,36 @@ while true do
 	end
 	-- Collect here-doc bodies if needed
 	local flat = lexer.tokenize_flat(line)
-	local heredoc_lines
+	local heredoc_bodies
 	if flat then
 		local delims = {}
 		for i = 1, #flat do
 			if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
 				local strip = (flat[i] == "<<-")
 				local delim = flat[i + 1]
+				local quoted = false
 				if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
+					quoted = true
 					delim = delim:sub(2, -2)
 				end
-				delims[#delims + 1] = { delim = delim, strip = strip }
+				delims[#delims + 1] = { delim = delim, strip = strip, quoted = quoted }
 			end
 		end
 		if #delims > 0 then
-			heredoc_lines = {}
+			heredoc_bodies = {}
 			for _, hd in ipairs(delims) do
+				local body = {}
 				while true do
 					local hl = read_line()
 					if not hl then break end
 					if hd.strip then hl = hl:gsub("^\t+", "") end
 					if hl == hd.delim then break end
-					heredoc_lines[#heredoc_lines + 1] = hl
+					body[#body + 1] = hl .. "\n"
 				end
+				heredoc_bodies[#heredoc_bodies + 1] = table.concat(body)
 			end
 		end
 	end
-	run_line(line, heredoc_lines)
+	run_line(line, heredoc_bodies)
 	sigint_received = false
 end

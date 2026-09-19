@@ -53,6 +53,44 @@ SH="lua5.4 $D/sh.lua"
 [ "$($SH -c 'x=10; echo $((x+5))')" = "15" ] &&
 [ "$($SH -c 'echo $((10%3))')" = "1" ] &&
 [ "$($SH -c 'echo $((5>3))')" = "1" ] &&
+# set builtin: positional parameters and options
+[ "$($SH -c 'set -- x y z; echo "$# $1 $3"')" = "3 x z" ] &&
+[ "$($SH -c 'set a b; echo "$# $1"')" = "2 a" ] &&
+[ "$($SH -c 'set -- ; echo $#')" = "0" ] &&
+[ "$($SH -c 'set -e; false; echo REACHED'; echo "rc=$?")" = "rc=1" ] &&
+[ "$($SH -c 'set -e; if false; then echo no; fi; false || true; ! true; echo OK')" = "OK" ] &&
+# field splitting on unquoted expansion
+[ "$($SH -c 'v="a b"; printf "[%s]" $v')" = "[a][b]" ] &&
+[ "$($SH -c 'v="a b"; printf "[%s]" "$v"')" = "[a b]" ] &&
+[ "$($SH -c 'IFS=:; v=a:b; printf "[%s]" $v')" = "[a][b]" ] &&
+[ "$($SH -c 'v=""; printf "[%s]" $v; echo done')" = "[]done" ] &&
+[ "$($SH -c 'IFS=:; v=a:; printf "[%s]" $v')" = "[a]" ] &&
+[ "$($SH -c 'IFS=:; v=a::b; printf "[%s]" $v')" = "[a][][b]" ] &&
+[ "$($SH -c 'IFS=:; v=:a; printf "[%s]" $v')" = "[][a]" ] &&
+[ "$($SH -c 'v="  a  b  "; printf "[%s]" $v')" = "[a][b]" ] &&
+# nested double quotes inside command substitution
+[ "$($SH -c 'echo "M: $(echo "a b")"')" = "M: a b" ] &&
+[ "$($SH -c 'echo "$(echo ")")"')" = ")" ] &&
+# prefix assignments are visible to later prefixes
+[ "$($SH -c 'A=1 B=$A env' | grep "^B=")" = "B=1" ] &&
+# ${var%pat} honours an escaped pattern character
+[ "$($SH -c 'v="a*c"; echo "${v%\*c}"')" = "a" ] &&
+# ${#param} works on special parameters too
+[ "$($SH -c 'set -- ab cde; echo ${#0} ${#1} ${#2}' sh)" = "2 2 3" ] &&
+# ${var:offset:length}
+[ "$($SH -c 'v=abcdef; echo "${v:1:3} ${v: -2} ${v:-def}"')" = "bcd ef abcdef" ] &&
+# ${var:?word} ends a non-interactive shell
+[ "$($SH -c 'echo ${u:?boom}; echo AFTER' 2>/dev/null)" = "" ] &&
+# arithmetic: C semantics, no Lua evaluation
+[ "$($SH -c 'echo $((-7/2)) $((-7%2)) $((!0)) $((2 && 3)) $((010)) $((0x1f))')" = "-3 -1 1 1 8 31" ] &&
+[ "$($SH -c 'A="math.pi"; echo $((A))' 2>/dev/null; echo "rc=$?")" = "rc=2" ] &&
+[ "$($SH -c 'echo $((1/0))' 2>/dev/null; echo "rc=$?")" = "rc=2" ] &&
+[ "$($SH -c 'echo $((1+))' 2>/dev/null; echo "rc=$?")" = "rc=2" ] &&
+[ "$($SH -c 'a=0; echo $((a != 0 && 10/a > 1))')" = "0" ] &&
+# here-document expansion and trailing newline
+[ "$(printf 'x=world\ncat <<EOF\nH $((1+1)) $x\nEOF\necho next\n' | $SH)" = "$(printf 'H 2 world\nnext')" ] &&
+[ "$(printf "cat <<'EOF'\nliteral \$x\nEOF\n" | $SH)" = 'literal $x' ] &&
+[ "$(printf 'cat <<EOF\na\n\nb\nEOF\n' | $SH | wc -l)" = "3" ] &&
 # pipeline SIGPIPE handling
 [ "$(timeout 3 $SH -c 'yes | head -3')" = "$(printf 'y\ny\ny')" ] &&
 [ "$(timeout 3 $SH -c 'seq 1000 | head -2')" = "$(printf '1\n2')" ]

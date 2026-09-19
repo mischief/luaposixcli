@@ -245,6 +245,7 @@ end
 
 -- interactive/stdin mode
 local interactive = unistd.isatty(0) == 1
+env.set_interactive(interactive)
 
 -- set default PS1 if not already set
 if not env.get("PS1") then

@@ -49,6 +49,16 @@ function M.reset()
 	seed_from_env()
 end
 
+local interactive = false
+
+function M.set_interactive(v)
+	interactive = v and true or false
+end
+
+function M.is_interactive()
+	return interactive
+end
+
 function M.set_opt(flag, val)
 	opts[flag] = val and true or false
 end

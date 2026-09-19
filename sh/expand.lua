@@ -16,6 +16,15 @@ local function lookup(name)
 	return env.get(name) or ""
 end
 
+-- Report an expansion error. A non-interactive shell exits, as POSIX requires.
+local function fatal(msg, status)
+	unistd.write(2, "sh: " .. msg .. "\n")
+	if not env.is_interactive() then
+		env.run_exit_trap()
+		os.exit(status or 2)
+	end
+end
+
 -- find the shell path for command substitution
 local sh_path
 
@@ -63,39 +72,8 @@ local function cmdsub(cmd)
 	return (out:gsub("\n+$", ""))
 end
 
--- match $(...) using Cmt with a P("$") guard so it never matches empty
--- Evaluate arithmetic expression (POSIX shell arithmetic)
-local function arith_eval(expr)
-	-- Expand variables in the expression
-	local expanded = expr:gsub("%$([%a_][%w_]*)", function(name)
-		return env.get(name) or "0"
-	end):gsub("%$(%d)", function(n)
-		return env.get(n) or "0"
-	end)
-	-- Replace variable names (bare words) with their values
-	expanded = expanded:gsub("([%a_][%w_]*)", function(name)
-		local v = env.get(name)
-		return v and v or name
-	end)
-	-- Evaluate using Lua (safe subset: only arithmetic)
-	-- Convert shell operators: ! → not, ~ is bitwise not (lua 5.4 supports it)
-	expanded = expanded:gsub("([^!<>=])!=", "%1~=") -- != → ~=
-	expanded = expanded:gsub("^!=", "~=")
-	expanded = expanded:gsub("&&", " and ")
-	expanded = expanded:gsub("||", " or ")
-	expanded = expanded:gsub("([^~])!", "%1 not ")
-	expanded = expanded:gsub("^!", "not ")
-	local fn, err = load("return (" .. expanded .. ")", "arith", "t", { math = math })
-	if fn then
-		local ok, result = pcall(fn)
-		if ok then
-			if type(result) == "boolean" then return result and "1" or "0" end
-			if type(result) == "number" then return tostring(math.floor(result)) end
-			return tostring(result)
-		end
-	end
-	return "0"
-end
+-- Arithmetic is evaluated after the rest of the word grammar is defined.
+local arith_eval
 
 local cmdsub_pat = Cmt(P("$"), function(s, p)
 	-- p is after the "$", check for "("
@@ -381,6 +359,321 @@ local word_pat = Ct((sq_lit + dq_lit + unquoted) ^ 0) / table.concat
 
 word = function(s)
 	return lpeg.match(word_pat, s) or s
+end
+
+-- POSIX shell arithmetic: signed integers with C operators and precedence.
+-- Operands come from shell variables. Nothing here is executed as Lua code.
+local function arith_fail(msg)
+	error({ arith = msg }, 0)
+end
+
+local function arith_number(text)
+	local n
+	if text:match("^0[xX]%x+$") then
+		n = tonumber(text)
+	elseif text:match("^0%d+$") then
+		n = tonumber(text:sub(2), 8)
+	else
+		n = tonumber(text, 10)
+	end
+	if not n or math.type(n) ~= "integer" then
+		arith_fail("illegal number: " .. text)
+	end
+	return n
+end
+
+-- C truncation toward zero, not Lua's floor
+local function arith_div(a, b)
+	local q = a // b
+	if q < 0 and q * b ~= a then q = q + 1 end
+	return q
+end
+
+local function arith_mod(a, b)
+	return a - arith_div(a, b) * b
+end
+
+local arith_ops3 = { "<<=", ">>=" }
+local arith_ops2 = { "<<", ">>", "<=", ">=", "==", "!=", "&&", "||",
+	"+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=" }
+local arith_ops1 = "+-*/%~!<>&|^?:()="
+local arith_assign = {
+	["="] = true, ["+="] = true, ["-="] = true, ["*="] = true, ["/="] = true,
+	["%="] = true, ["&="] = true, ["|="] = true, ["^="] = true,
+	["<<="] = true, [">>="] = true,
+}
+local arith_levels = {
+	{ "||" }, { "&&" }, { "|" }, { "^" }, { "&" },
+	{ "==", "!=" }, { "<", "<=", ">", ">=" }, { "<<", ">>" },
+	{ "+", "-" }, { "*", "/", "%" },
+}
+
+local function arith_lex(src)
+	local toks, i = {}, 1
+	while i <= #src do
+		local c = src:sub(i, i)
+		if c:match("%s") then
+			i = i + 1
+		elseif c:match("%d") then
+			local num = src:match("^0[xX]%x+", i) or src:match("^%w+", i)
+			toks[#toks + 1] = { t = "num", v = num }
+			i = i + #num
+		elseif c:match("[%a_]") then
+			local name = src:match("^[%a_][%w_]*", i)
+			toks[#toks + 1] = { t = "name", v = name }
+			i = i + #name
+		else
+			local op
+			for _, cand in ipairs(arith_ops3) do
+				if src:sub(i, i + 2) == cand then op = cand break end
+			end
+			if not op then
+				for _, cand in ipairs(arith_ops2) do
+					if src:sub(i, i + 1) == cand then op = cand break end
+				end
+			end
+			if not op then
+				if not arith_ops1:find(c, 1, true) then
+					arith_fail("unexpected character '" .. c .. "'")
+				end
+				op = c
+			end
+			toks[#toks + 1] = { t = "op", v = op }
+			i = i + #op
+		end
+	end
+	return toks
+end
+
+local arith_value
+
+-- Evaluate a token list. depth guards against a variable that refers to itself.
+local function arith_parse(toks, depth)
+	local pos = 1
+	-- above zero while inside a branch that short-circuiting skipped: no
+	-- assignment happens and a division by zero yields 0 instead of failing
+	local dead = 0
+
+	local function peek()
+		local t = toks[pos]
+		return t and t.v
+	end
+
+	local function accept(v)
+		if peek() == v then
+			pos = pos + 1
+			return true
+		end
+		return false
+	end
+
+	local function apply(op, a, b)
+		if op == "*" then return a * b
+		elseif op == "/" then
+			if b == 0 then
+				if dead > 0 then return 0 end
+				arith_fail("division by zero")
+			end
+			return arith_div(a, b)
+		elseif op == "%" then
+			if b == 0 then
+				if dead > 0 then return 0 end
+				arith_fail("division by zero")
+			end
+			return arith_mod(a, b)
+		elseif op == "+" then return a + b
+		elseif op == "-" then return a - b
+		elseif op == "<<" then return a << b
+		elseif op == ">>" then return a >> b
+		elseif op == "<" then return a < b and 1 or 0
+		elseif op == "<=" then return a <= b and 1 or 0
+		elseif op == ">" then return a > b and 1 or 0
+		elseif op == ">=" then return a >= b and 1 or 0
+		elseif op == "==" then return a == b and 1 or 0
+		elseif op == "!=" then return a ~= b and 1 or 0
+		elseif op == "&" then return a & b
+		elseif op == "^" then return a ~ b
+		elseif op == "|" then return a | b
+		end
+		arith_fail("unknown operator '" .. op .. "'")
+	end
+
+	local function value_of(name)
+		local raw = env.get(name)
+		if raw == nil or raw == "" then return 0 end
+		if depth > 32 then arith_fail("expansion too deep: " .. name) end
+		return arith_value(raw, depth + 1)
+	end
+
+	local assign_expr, binary
+
+	local function primary()
+		local t = toks[pos]
+		if not t then arith_fail("unexpected end of expression") end
+		if t.t == "num" then
+			pos = pos + 1
+			return arith_number(t.v)
+		elseif t.t == "name" then
+			pos = pos + 1
+			return value_of(t.v)
+		elseif t.v == "(" then
+			pos = pos + 1
+			local v = assign_expr()
+			if not accept(")") then arith_fail("missing )") end
+			return v
+		end
+		arith_fail("unexpected '" .. t.v .. "'")
+	end
+
+	local function unary()
+		local v = peek()
+		if v == "-" then pos = pos + 1 return -unary() end
+		if v == "+" then pos = pos + 1 return unary() end
+		if v == "!" then pos = pos + 1 return unary() == 0 and 1 or 0 end
+		if v == "~" then pos = pos + 1 return ~unary() end
+		return primary()
+	end
+
+	function binary(level)
+		if level > #arith_levels then return unary() end
+		local lhs = binary(level + 1)
+		while true do
+			local v = peek()
+			local op
+			for _, cand in ipairs(arith_levels[level]) do
+				if v == cand then op = cand break end
+			end
+			if not op then return lhs end
+			pos = pos + 1
+			if op == "&&" or op == "||" then
+				local taken = (op == "&&") == (lhs ~= 0)
+				if not taken then dead = dead + 1 end
+				local rhs = binary(level + 1)
+				if not taken then dead = dead - 1 end
+				if op == "&&" then
+					lhs = (lhs ~= 0 and rhs ~= 0) and 1 or 0
+				else
+					lhs = (lhs ~= 0 or rhs ~= 0) and 1 or 0
+				end
+			else
+				lhs = apply(op, lhs, binary(level + 1))
+			end
+		end
+	end
+
+	local function conditional()
+		local cond = binary(1)
+		if not accept("?") then return cond end
+		local live = cond ~= 0
+		if not live then dead = dead + 1 end
+		local a = assign_expr()
+		if not live then dead = dead - 1 end
+		if not accept(":") then arith_fail("missing : in ?:") end
+		if live then dead = dead + 1 end
+		local b = conditional()
+		if live then dead = dead - 1 end
+		if live then return a end
+		return b
+	end
+
+	function assign_expr()
+		local name_tok, op_tok = toks[pos], toks[pos + 1]
+		if name_tok and name_tok.t == "name" and op_tok and op_tok.t == "op"
+			and arith_assign[op_tok.v] then
+			pos = pos + 2
+			local rhs = assign_expr()
+			local val = rhs
+			if op_tok.v ~= "=" then
+				val = apply(op_tok.v:sub(1, -2), value_of(name_tok.v), rhs)
+			end
+			if dead == 0 then env.set(name_tok.v, tostring(val)) end
+			return val
+		end
+		return conditional()
+	end
+
+	local result = assign_expr()
+	if toks[pos] then arith_fail("unexpected '" .. toks[pos].v .. "'") end
+	return result
+end
+
+function arith_value(text, depth)
+	return arith_parse(arith_lex(text), depth)
+end
+
+arith_eval = function(expr)
+	local ok, result = pcall(arith_value, word(expr), 0)
+	if ok then return tostring(result) end
+	local msg = type(result) == "table" and result.arith or tostring(result)
+	fatal("arithmetic: " .. msg, 2)
+	return "0"
+end
+
+-- Same grammar as word_pat, but each piece is kept separate and tagged so
+-- field splitting can tell an unquoted expansion from literal text.
+local function tag_literal(v)
+	return { text = v, split = false }
+end
+
+local function tag_split(v)
+	return { text = v, split = true }
+end
+
+local piece_pat = Ct((
+	(sq_lit + dq_lit) / tag_literal
+	+ (cmdsub_pat + dollar_exp) / tag_split
+	+ C(1 - lpeg.S("'\"")) / tag_literal
+) ^ 0)
+
+local function is_ifs_white(c)
+	return c == " " or c == "\t" or c == "\n"
+end
+
+-- Expand a word and split the results of unquoted expansions on IFS.
+-- Literal and quoted text never splits. Returns a list of fields.
+local function expand_fields(s)
+	local pieces = lpeg.match(piece_pat, s)
+	if not pieces then return { word(s) } end
+	local ifs = env.get("IFS")
+	if ifs == nil then ifs = " \t\n" end
+	local fields = {}
+	local cur = nil
+	for _, piece in ipairs(pieces) do
+		if not piece.split or ifs == "" then
+			cur = (cur or "") .. piece.text
+		else
+			local text, i = piece.text, 1
+			while i <= #text do
+				local c = text:sub(i, i)
+				if not ifs:find(c, 1, true) then
+					cur = (cur or "") .. c
+					i = i + 1
+				else
+					-- one delimiter: a run of IFS whitespace around at most
+					-- one non-whitespace IFS character
+					local sawnonwhite = false
+					while i <= #text do
+						local d = text:sub(i, i)
+						if not ifs:find(d, 1, true) then break end
+						if is_ifs_white(d) then
+							i = i + 1
+						elseif not sawnonwhite then
+							sawnonwhite = true
+							i = i + 1
+						else
+							break
+						end
+					end
+					if cur ~= nil or sawnonwhite then
+						fields[#fields + 1] = cur or ""
+						cur = nil
+					end
+				end
+			end
+		end
+	end
+	if cur ~= nil then fields[#fields + 1] = cur end
+	return fields
 end
 
 -- detect NAME=value

@@ -16,9 +16,11 @@ luaposixcli_sys = shared_library('sys', 'sys.c',
 test_env = environment()
 test_env.append('LUA_CPATH', meson.project_build_root() / '?.so;;', separator: ';')
 
-test('luaposixcli.sys', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'sys_test.lua'],
-  workdir: meson.project_source_root(),
-  env: test_env,
-  depends: luaposixcli_sys,
-)
+if busted.found()
+  test('luaposixcli.sys', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'sys_test.lua'],
+    workdir: meson.project_source_root(),
+    env: test_env,
+    depends: luaposixcli_sys,
+  )
+endif

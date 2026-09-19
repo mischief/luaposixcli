@@ -19,7 +19,7 @@ if not lua_dep.found()
 endif
 
 lua_prog = find_program(lua_name)
-busted = find_program('busted')
+busted = find_program('busted', required: false)
 sh = find_program('sh')
 
 subdir('luaposixcli')

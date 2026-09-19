@@ -14,23 +14,25 @@ install_data(
   install_dir: lua_mod_dir / 'make',
 )
 
-test('make.parser', busted,
-  args: [
-    '--lua=' + lua_name,
-    '--cpath=' + meson.current_build_dir() / '?.so',
-    meson.current_source_dir() / 'parser_test.lua',
-  ],
-  workdir: meson.project_source_root(),
-)
+if busted.found()
+  test('make.parser', busted,
+    args: [
+      '--lua=' + lua_name,
+      '--cpath=' + meson.current_build_dir() / '?.so',
+      meson.current_source_dir() / 'parser_test.lua',
+    ],
+    workdir: meson.project_source_root(),
+  )
 
-test('make.eval', busted,
-  args: [
-    '--lua=' + lua_name,
-    '--cpath=' + meson.current_build_dir() / '?.so',
-    meson.current_source_dir() / 'eval_test.lua',
-  ],
-  workdir: meson.project_source_root(),
-)
+  test('make.eval', busted,
+    args: [
+      '--lua=' + lua_name,
+      '--cpath=' + meson.current_build_dir() / '?.so',
+      meson.current_source_dir() / 'eval_test.lua',
+    ],
+    workdir: meson.project_source_root(),
+  )
+endif
 
 test('make.sh', sh, args: [meson.current_source_dir() / 'test.sh'],
   env: ['LUA_CPATH=' + meson.project_build_root() / '?.so;;'],

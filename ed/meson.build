@@ -24,11 +24,13 @@ install_data(
   install_dir: lua_mod_dir / 'ed',
 )
 
-test('ed.buffer', busted,
-  args: [
-    '--lua=' + lua_name,
-    '--cpath=' + meson.current_build_dir() / '?.so',
-    meson.current_source_dir() / 'buffer_test.lua',
-  ],
-  workdir: meson.project_source_root(),
-)
+if busted.found()
+  test('ed.buffer', busted,
+    args: [
+      '--lua=' + lua_name,
+      '--cpath=' + meson.current_build_dir() / '?.so',
+      meson.current_source_dir() / 'buffer_test.lua',
+    ],
+    workdir: meson.project_source_root(),
+  )
+endif

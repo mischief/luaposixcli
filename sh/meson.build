@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: ISC
-busted = find_program('busted')
 
 sh_test_env = environment()
 sh_test_env.append('LUA_CPATH', meson.project_build_root() / '?.so;;', separator: ';')
@@ -15,57 +14,59 @@ install_data(
   install_dir: lua_mod_dir / 'sh',
 )
 
-test('sh.lexer', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'lexer_test.lua'],
-  workdir: meson.project_source_root(),
-)
+if busted.found()
+  test('sh.lexer', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'lexer_test.lua'],
+    workdir: meson.project_source_root(),
+  )
 
-test('sh.vars', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'vars_test.lua'],
-  workdir: meson.project_source_root(),
-)
+  test('sh.vars', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'vars_test.lua'],
+    workdir: meson.project_source_root(),
+  )
 
-test('sh.test', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'test_test.lua'],
-  workdir: meson.project_source_root(),
-)
+  test('sh.test', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'test_test.lua'],
+    workdir: meson.project_source_root(),
+  )
 
-test('sh.list', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'list_test.lua'],
-  workdir: meson.project_source_root(),
-  env: sh_test_env,
-)
+  test('sh.list', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'list_test.lua'],
+    workdir: meson.project_source_root(),
+    env: sh_test_env,
+  )
 
-test('sh.cmdsub', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'cmdsub_test.lua'],
-  workdir: meson.project_source_root(),
-  env: sh_test_env,
-)
+  test('sh.cmdsub', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'cmdsub_test.lua'],
+    workdir: meson.project_source_root(),
+    env: sh_test_env,
+  )
 
-test('sh.redir', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'redir_test.lua'],
-  workdir: meson.project_source_root(),
-  env: sh_test_env,
-)
+  test('sh.redir', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'redir_test.lua'],
+    workdir: meson.project_source_root(),
+    env: sh_test_env,
+  )
 
-test('sh.compound', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_test.lua'],
-  workdir: meson.project_source_root(),
-  env: sh_test_env,
-  timeout: 10,
-)
+  test('sh.compound', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_test.lua'],
+    workdir: meson.project_source_root(),
+    env: sh_test_env,
+    timeout: 10,
+  )
 
-test('sh.compound_multiline', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_multiline_test.lua'],
-  workdir: meson.project_source_root(),
-  env: sh_test_env,
-  timeout: 10,
-)
+  test('sh.compound_multiline', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'compound_multiline_test.lua'],
+    workdir: meson.project_source_root(),
+    env: sh_test_env,
+    timeout: 10,
+  )
 
-test('sh.prefix_assign', busted,
-  args: ['--lua=' + lua_name, meson.current_source_dir() / 'prefix_assign_test.lua'],
-  workdir: meson.project_source_root(),
-  env: sh_test_env,
-)
+  test('sh.prefix_assign', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'prefix_assign_test.lua'],
+    workdir: meson.project_source_root(),
+    env: sh_test_env,
+  )
+endif
 
 test('sh', sh, args: [meson.current_source_dir() / 'test.sh'])

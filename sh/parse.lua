@@ -198,8 +198,12 @@ function parse_simple_command()
 
 	while true do
 		local t = peek()
+		-- A reserved word is only reserved in command position: "echo done"
+		-- passes "done" to echo.
+		local command_position = (#words == 0 and #assigns == 0 and #redirs == 0)
 		if not t or is_separator(t) or t == "|" or t == "&&" or t == "||"
-			or t == ")" or t == "}" or t == ";;" or is_terminator(t) then
+			or t == ")" or t == "}" or t == ";;"
+			or (command_position and is_terminator(t)) then
 			break
 		end
 		if is_redir(t) then

@@ -721,25 +721,29 @@ end
 -- Returns a list of words (may be more than one if glob matches).
 local posix_glob = require("posix.glob")
 local function glob_word(s)
+	local fields = expand_fields(s)
 	if not has_unquoted_glob(s) then
-		return { word(s) }
+		return fields
 	end
-	-- Expand variables first, but preserve glob chars
-	local expanded = word(s)
-	-- Try glob
-	local matches = posix_glob.glob(expanded, 0)
-	if matches then
-		table.sort(matches)
-		return matches
+	local out = {}
+	for _, field in ipairs(fields) do
+		local matches = posix_glob.glob(field, 0)
+		if matches then
+			table.sort(matches)
+			for _, m in ipairs(matches) do out[#out + 1] = m end
+		else
+			-- No matches: the pattern stands for itself (POSIX)
+			out[#out + 1] = field
+		end
 	end
-	-- No matches: return literal (POSIX behavior)
-	return { expanded }
+	return out
 end
 
 return {
 	word = word,
 	heredoc = heredoc,
 	glob_word = glob_word,
+	expand_fields = expand_fields,
 	is_assignment = is_assignment,
 	parse_assignment = parse_assignment,
 	set_sh_path = set_sh_path,

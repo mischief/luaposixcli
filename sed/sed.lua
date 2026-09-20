@@ -116,44 +116,93 @@ local function do_sub(line, pattern, replacement, global)
 	return result .. remaining, changed
 end
 
--- read input
-local content = ""
-if #files == 0 then
-	while true do
-		local data = unistd.read(0, 8192)
-		if not data or data == "" then break end
-		content = content .. data
+-- Read the operands as one stream, the way POSIX describes: the files are
+-- concatenated, line numbers run on across them, and $ is the last line of
+-- the last file. Reading is lazy, so q stops before the later files are
+-- opened, and a file that cannot be read is reported without ending the run.
+local exit_status = 0
+
+local function line_reader(paths)
+	local sources = #paths > 0 and paths or { "-" }
+	local idx, fd, buf = 0, nil, ""
+
+	local function open_next()
+		while idx < #sources do
+			idx = idx + 1
+			local path = sources[idx]
+			if path == "-" then
+				fd = 0
+				return true
+			end
+			local f, err = fcntl.open(path, fcntl.O_RDONLY)
+			if f then
+				fd = f
+				return true
+			end
+			unistd.write(2, "sed: can't read " .. (err or path .. ": No such file or directory") .. "\n")
+			exit_status = 2
+		end
+		return false
 	end
-else
-	for _, f in ipairs(files) do
-		local fd = fcntl.open(f, fcntl.O_RDONLY)
-		if not fd then
-			unistd.write(2, "sed: " .. f .. ": No such file or directory\n")
-			os.exit(1)
-		end
+
+	-- Append the next chunk of input to buf. False once every source is done.
+	local function fill()
 		while true do
-			local data = unistd.read(fd, 8192)
-			if not data or data == "" then break end
-			content = content .. data
+			if not fd and not open_next() then return false end
+			local data, err = unistd.read(fd, 8192)
+			if data and data ~= "" then
+				buf = buf .. data
+				return true
+			end
+			if not data then
+				unistd.write(2, "sed: read error on " .. sources[idx] .. ": " .. (err or "read failed") .. "\n")
+				exit_status = 2
+			end
+			if fd ~= 0 then unistd.close(fd) end
+			fd = nil
 		end
-		unistd.close(fd)
+	end
+
+	return function()
+		while true do
+			local nl = buf:find("\n", 1, true)
+			if nl then
+				local line = buf:sub(1, nl - 1)
+				buf = buf:sub(nl + 1)
+				return line
+			end
+			if not fill() then
+				if buf ~= "" then
+					local line = buf
+					buf = ""
+					return line
+				end
+				return nil
+			end
+		end
 	end
 end
 
--- split into lines
-local lines = {}
-for line in content:gmatch("([^\n]*)\n?") do
-	lines[#lines + 1] = line
+-- One line of lookahead, so the $ address knows the last line without
+-- holding the whole input in memory.
+local next_line = line_reader(files)
+local pending = next_line()
+
+local function read_line()
+	local line = pending
+	if line == nil then return nil end
+	pending = next_line()
+	return line, (pending == nil)
 end
-if #lines > 0 and lines[#lines] == "" then table.remove(lines) end
 
 -- execute
 local in_range = {}
--- Lua 5.5 makes the control variable read only, so the pattern space is
--- a local copy of it.
-for lineno, raw in ipairs(lines) do
+local lineno = 0
+while true do
+	local raw, last = read_line()
+	if raw == nil then break end
 	local line = raw
-	local last = (lineno == #lines)
+	lineno = lineno + 1
 	local output = true
 	local print_extra = false
 	local deleted = false
@@ -188,7 +237,7 @@ for lineno, raw in ipairs(lines) do
 				print_extra = true
 			elseif c.cmd == "q" then
 				if not quiet then unistd.write(1, line .. "\n") end
-				os.exit(0)
+				os.exit(exit_status)
 			elseif c.cmd == "s" then
 				local new, changed = do_sub(line, c.pattern, c.replacement, c.global)
 				line = new
@@ -202,3 +251,5 @@ for lineno, raw in ipairs(lines) do
 		if print_extra then unistd.write(1, line .. "\n") end
 	end
 end
+
+os.exit(exit_status)

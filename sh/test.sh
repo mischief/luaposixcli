@@ -91,6 +91,12 @@ SH="lua5.4 $D/sh.lua"
 [ "$(printf 'x=world\ncat <<EOF\nH $((1+1)) $x\nEOF\necho next\n' | $SH)" = "$(printf 'H 2 world\nnext')" ] &&
 [ "$(printf "cat <<'EOF'\nliteral \$x\nEOF\n" | $SH)" = 'literal $x' ] &&
 [ "$(printf 'cat <<EOF\na\n\nb\nEOF\n' | $SH | wc -l)" = "3" ] &&
+# exported variables reach a child process
+[ "$($SH -c 'BAR=two; export BAR; env' | grep "^BAR=")" = "BAR=two" ] &&
+[ "$($SH -c 'export BAZ=three; env' | grep "^BAZ=")" = "BAZ=three" ] &&
+[ "$($SH -c 'X=1; env' | grep -c "^X=")" = "0" ] &&
+# echo -n
+[ "$($SH -c 'echo -n a; echo b')" = "ab" ] &&
 # pipeline SIGPIPE handling
 [ "$(timeout 3 $SH -c 'yes | head -3')" = "$(printf 'y\ny\ny')" ] &&
 [ "$(timeout 3 $SH -c 'seq 1000 | head -2')" = "$(printf '1\n2')" ]

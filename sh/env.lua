@@ -141,6 +141,21 @@ function M.set_last_bg(pid)
 	last_bg = tostring(pid)
 end
 
+-- Copy the exported variables into the process environment. A child gets
+-- its environment from the parent process, not from this table, so this
+-- runs in the forked child before exec.
+function M.export_to_process()
+	local stdlib = require("posix.stdlib")
+	for name in pairs(exported) do
+		local value = vars[name]
+		if value == nil then
+			stdlib.unsetenv(name)
+		else
+			stdlib.setenv(name, value, true)
+		end
+	end
+end
+
 -- returns table of name=value pairs for exported vars
 function M.environ()
 	local t = {}

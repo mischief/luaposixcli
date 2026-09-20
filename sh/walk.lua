@@ -437,8 +437,15 @@ builtins = {
 		return 1
 	end,
 	echo = function(args)
-		local out = table.concat(args, " ", 2) .. "\n"
-		unistd.write(1, out)
+		-- POSIX echo has no options; -n is accepted because every other
+		-- shell accepts it and scripts rely on it.
+		local first = 2
+		local newline = "\n"
+		if args[2] == "-n" then
+			first = 3
+			newline = ""
+		end
+		unistd.write(1, table.concat(args, " ", first) .. newline)
 		return 0
 	end,
 	getopts = function(args)
@@ -752,6 +759,7 @@ local function exec_simple(node)
 	if pid == 0 then
 		signal.signal(signal.SIGINT, signal.SIG_DFL)
 		signal.signal(signal.SIGQUIT, signal.SIG_DFL)
+		env.export_to_process()
 		-- apply prefix assignments to child environment only.
 		-- Each is visible to the ones that follow it (POSIX).
 		for _, a in ipairs(assigns) do

@@ -4,6 +4,9 @@ D="$(dirname "$0")"
 ROOT="$(cd "$D/.." && pwd)"
 export LUA_PATH="$ROOT/?.lua:$ROOT/?/init.lua:$LUA_PATH"
 SH="lua5.4 $D/sh.lua"
+TMPH=$(mktemp -d)
+trap 'rm -rf "$TMPH"' EXIT
+printf 'PROFILE_RAN=yes\nexport PROFILE_RAN\n' > "$TMPH/.profile"
 [ "$($SH -c 'echo hello world')" = "hello world" ] &&
 [ "$($SH -c 'echo hello | cat')" = "hello" ] &&
 [ "$($SH -c 'seq 5 | tail -2')" = "$(seq 5 | tail -2)" ] &&
@@ -91,6 +94,10 @@ SH="lua5.4 $D/sh.lua"
 [ "$(printf 'x=world\ncat <<EOF\nH $((1+1)) $x\nEOF\necho next\n' | $SH)" = "$(printf 'H 2 world\nnext')" ] &&
 [ "$(printf "cat <<'EOF'\nliteral \$x\nEOF\n" | $SH)" = 'literal $x' ] &&
 [ "$(printf 'cat <<EOF\na\n\nb\nEOF\n' | $SH | wc -l)" = "3" ] &&
+# a login shell reads the profiles, an ordinary one does not.
+# /etc/profile is read first and may print anything, so match loosely.
+HOME=$TMPH $SH -l -c 'echo $PROFILE_RAN' 2>/dev/null | grep -q yes &&
+[ "$(HOME=$TMPH $SH -c 'echo $PROFILE_RAN' 2>/dev/null)" = "" ] &&
 # exported variables reach a child process
 [ "$($SH -c 'BAR=two; export BAR; env' | grep "^BAR=")" = "BAR=two" ] &&
 [ "$($SH -c 'export BAZ=three; env' | grep "^BAZ=")" = "BAZ=three" ] &&

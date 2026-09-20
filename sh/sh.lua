@@ -34,10 +34,13 @@ expand.set_run_fn(nil) -- will be set after run_line is defined
 
 -- parse options
 local cmd_string = nil
+local login = (a[0] or ""):sub(1, 1) == "-"
 local optind = 0
-for opt, optarg, oi in unistd.getopt(a, "c:") do
+for opt, optarg, oi in unistd.getopt(a, "c:l") do
 	if opt == "c" then
 		cmd_string = optarg
+	elseif opt == "l" then
+		login = true
 	end
 	optind = oi
 end
@@ -118,6 +121,27 @@ local function run_line(line, heredoc_bodies)
 end
 
 expand.set_run_fn(run_line)
+
+local interactive = unistd.isatty(0) == 1
+env.set_interactive(interactive)
+
+-- A login shell reads the profiles; any interactive shell reads $ENV.
+-- A file that is not there is not an error.
+local function source_if_readable(path)
+	if path and path ~= "" and unistd.access(path, "r") == 0 then
+		run_line(". '" .. path .. "'")
+	end
+end
+
+if login then
+	source_if_readable("/etc/profile")
+	local home = env.get("HOME")
+	if home and home ~= "" then source_if_readable(home .. "/.profile") end
+end
+if interactive then
+	local envfile = env.get("ENV")
+	if envfile then source_if_readable(expand.word(envfile)) end
+end
 
 -- -c mode: run command string and exit
 if cmd_string then
@@ -244,9 +268,6 @@ if script_file then
 end
 
 -- interactive/stdin mode
-local interactive = unistd.isatty(0) == 1
-env.set_interactive(interactive)
-
 -- set default PS1 if not already set
 if not env.get("PS1") then
 	if unistd.getuid() == 0 then

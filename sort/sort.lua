@@ -3,32 +3,88 @@
 local unistd = require("posix.unistd")
 local fcntl = require("posix.fcntl")
 
-local numeric = false
-local reverse = false
-local key = nil
+local gnumeric, greverse, gblanks, gfold = false, false, false, false
+local unique = false
+local sep = nil
+local keys = {}
 local files = {}
+
+local function usage()
+	unistd.write(2, "usage: sort [-bfnru] [-t char] [-k keydef] [file...]\n")
+	os.exit(2)
+end
+
+-- A key is field_start[.char][opts][,field_end[.char][opts]], as POSIX
+-- spells it: -k2 sorts from field 2 to the end of the line, -k2,2 on
+-- field 2 alone, and the letters after either number are that key's own
+-- ordering options.
+local function parse_key(spec)
+	local function part(text)
+		local field, char, opts = text:match("^(%d+)%.?(%d*)([bdfginr]*)$")
+		if not field then return nil end
+		return {
+			field = tonumber(field),
+			char = tonumber(char),
+			numeric = opts:find("n") ~= nil,
+			reverse = opts:find("r") ~= nil,
+			blanks = opts:find("b") ~= nil,
+			fold = opts:find("f") ~= nil,
+		}
+	end
+	local first, second = spec:match("^([^,]+),(.+)$")
+	local start = part(first or spec)
+	if not start then return nil end
+	local stop = second and part(second)
+	if second and not stop then return nil end
+	-- an option written on either end belongs to the whole key
+	local function either(name)
+		return start[name] or (stop and stop[name]) or false
+	end
+	return {
+		start = start,
+		stop = stop,
+		numeric = either("numeric"),
+		reverse = either("reverse"),
+		blanks = either("blanks"),
+		fold = either("fold"),
+	}
+end
 
 local i = 1
 while i <= #arg do
 	local a = arg[i]
-	if a == "-n" then
-		numeric = true
-	elseif a == "-r" then
-		reverse = true
-	elseif a == "-k" then
-		i = i + 1
-		key = tonumber(arg[i])
-	elseif a == "-nr" or a == "-rn" then
-		numeric = true
-		reverse = true
-	elseif a:sub(1, 1) == "-" then
-		for j = 2, #a do
+	if a == "--" then
+		for j = i + 1, #arg do files[#files + 1] = arg[j] end
+		break
+	elseif a:sub(1, 1) == "-" and #a > 1 then
+		local j = 2
+		while j <= #a do
 			local c = a:sub(j, j)
-			if c == "n" then
-				numeric = true
-			elseif c == "r" then
-				reverse = true
+			if c == "n" then gnumeric = true
+			elseif c == "r" then greverse = true
+			elseif c == "b" then gblanks = true
+			elseif c == "f" then gfold = true
+			elseif c == "u" then unique = true
+			elseif c == "k" or c == "t" then
+				-- the value is the rest of this argument, or the next one
+				local value = a:sub(j + 1)
+				if value == "" then
+					i = i + 1
+					value = arg[i]
+				end
+				if not value then usage() end
+				if c == "t" then
+					sep = value
+				else
+					local k = parse_key(value)
+					if not k then usage() end
+					keys[#keys + 1] = k
+				end
+				j = #a
+			else
+				usage()
 			end
+			j = j + 1
 		end
 	else
 		files[#files + 1] = a
@@ -76,34 +132,121 @@ if #lines > 0 and lines[#lines] == "" then
 	table.remove(lines)
 end
 
--- extract sort key from a line
-local function get_key(line)
-	if key then
-		local k = 0
-		for field in line:gmatch("%S+") do
-			k = k + 1
-			if k == key then
-				return field
+-- Fields of a line. Without -t they are runs of non-blanks; with it,
+-- whatever lies between separator characters.
+local function fields(line)
+	local out = {}
+	if sep then
+		local pos = 1
+		while true do
+			local at = line:find(sep, pos, true)
+			if not at then
+				out[#out + 1] = line:sub(pos)
+				break
 			end
+			out[#out + 1] = line:sub(pos, at - 1)
+			pos = at + #sep
 		end
-		return ""
+	else
+		for field in line:gmatch("%S+") do out[#out + 1] = field end
 	end
-	return line
+	return out
 end
 
--- sort
-table.sort(lines, function(a, b)
-	local ka, kb = get_key(a), get_key(b)
+-- The text one key selects from a line
+local function key_text(line, key)
+	local f = fields(line)
+	local first = f[key.start.field]
+	if not first then return "" end
+	if key.start.char and key.start.char > 1 then
+		first = first:sub(key.start.char)
+	end
+	if not key.stop then
+		local rest = { first }
+		for n = key.start.field + 1, #f do rest[#rest + 1] = f[n] end
+		return table.concat(rest, sep or " ")
+	end
+	local last = key.stop.field
+	if last <= key.start.field then
+		if key.stop.char then first = first:sub(1, key.stop.char) end
+		return first
+	end
+	local rest = { first }
+	for n = key.start.field + 1, last do
+		local text = f[n]
+		if not text then break end
+		if n == last and key.stop.char then text = text:sub(1, key.stop.char) end
+		rest[#rest + 1] = text
+	end
+	return table.concat(rest, sep or " ")
+end
+
+local function compare_text(a, b, numeric, blanks, fold)
+	if blanks then
+		a, b = a:gsub("^%s+", ""), b:gsub("^%s+", "")
+	end
 	if numeric then
-		ka, kb = tonumber(ka) or 0, tonumber(kb) or 0
+		-- a numeric key is whatever number the text starts with, so a
+		-- key that runs to the end of the line still compares
+		local function value(text)
+			return tonumber(text:match("^%s*[-+]?%d*%.?%d*")) or 0
+		end
+		local na, nb = value(a), value(b)
+		if na == nb then return 0 end
+		return na < nb and -1 or 1
 	end
-	if reverse then
-		return ka > kb
+	if fold then a, b = a:upper(), b:upper() end
+	if a == b then return 0 end
+	return a < b and -1 or 1
+end
+
+-- What the ordering options say about two lines, and nothing else: -u
+-- calls two lines duplicates exactly when this says they are equal.
+local function compare_keys(a, b)
+	if #keys == 0 then
+		local c = compare_text(a, b, gnumeric, gblanks, gfold)
+		if greverse then return -c end
+		return c
 	end
-	return ka < kb
+	for _, key in ipairs(keys) do
+		local c = compare_text(key_text(a, key), key_text(b, key),
+			key.numeric or gnumeric, key.blanks or gblanks,
+			key.fold or gfold)
+		if c ~= 0 then
+			if key.reverse or greverse then return -c end
+			return c
+		end
+	end
+	return 0
+end
+
+-- Lines the keys call equal fall back to the whole line, byte for byte,
+-- so the order is the same every run. With -u there is no such fallback:
+-- those lines are duplicates, and the first one in the input wins.
+local order = {}
+for n, line in ipairs(lines) do order[line] = order[line] or n end
+
+table.sort(lines, function(a, b)
+	local c = compare_keys(a, b)
+	if c ~= 0 then return c < 0 end
+	if not unique then
+		local plain = compare_text(a, b, false, false, false)
+		if greverse then plain = -plain end
+		if plain ~= 0 then return plain < 0 end
+	end
+	return (order[a] or 0) < (order[b] or 0)
 end)
 
--- output
+if unique then
+	local out = {}
+	for _, line in ipairs(lines) do
+		if #out == 0 or compare_keys(out[#out], line) ~= 0 then
+			out[#out + 1] = line
+		end
+	end
+	lines = out
+end
+
 for _, line in ipairs(lines) do
 	unistd.write(1, line .. "\n")
 end

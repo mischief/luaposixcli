@@ -18,6 +18,8 @@ install_data('ps.lua',
   install_mode: 'rwxr-xr-x',
 )
 
+install_data('list.lua', install_dir: lua_mod_dir / 'ps')
+
 ps_test_env = environment()
 ps_test_env.append('LUA_CPATH', meson.project_build_root() / '?.so;;', separator: ';')
 

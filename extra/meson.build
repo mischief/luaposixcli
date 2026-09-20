@@ -2,3 +2,4 @@
 # Non-POSIX extra utilities
 subdir('ping')
 subdir('gzip')
+subdir('top')

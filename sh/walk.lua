@@ -388,6 +388,7 @@ builtins = {
 		if pid == 0 then
 			local rest = {}
 			for i = 2, #cmd_args do rest[#rest + 1] = cmd_args[i] end
+			env.export_to_process()
 			unistd.execp(path, rest)
 			os.exit(127)
 		end
@@ -635,6 +636,7 @@ builtins = {
 		end
 		local rest = {}
 		for i = 3, #args do rest[#rest + 1] = args[i] end
+		env.export_to_process()
 		unistd.execp(path, rest)
 		return 126
 	end,

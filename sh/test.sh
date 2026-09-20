@@ -95,6 +95,8 @@ SH="lua5.4 $D/sh.lua"
 [ "$($SH -c 'BAR=two; export BAR; env' | grep "^BAR=")" = "BAR=two" ] &&
 [ "$($SH -c 'export BAZ=three; env' | grep "^BAZ=")" = "BAZ=three" ] &&
 [ "$($SH -c 'X=1; env' | grep -c "^X=")" = "0" ] &&
+[ "$($SH -c 'Z=zed; export Z; exec env' | grep "^Z=")" = "Z=zed" ] &&
+[ "$($SH -c 'Y=why; export Y; command env' | grep "^Y=")" = "Y=why" ] &&
 # echo -n
 [ "$($SH -c 'echo -n a; echo b')" = "ab" ] &&
 # pipeline SIGPIPE handling

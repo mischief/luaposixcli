@@ -13,8 +13,7 @@ luaposixcli_sys = shared_library('sys', 'sys.c',
   install_dir: lua_lib_dir / 'luaposixcli',
 )
 
-install_data('term.lua', 'util.lua', 'zmodem.lua', 'http.lua', 'tcp.lua',
-  install_dir: lua_mod_dir / 'luaposixcli')
+install_data('term.lua', 'util.lua', install_dir: lua_mod_dir / 'luaposixcli')
 
 # tar -z needs these, so they install with the rest of the modules.
 install_data(

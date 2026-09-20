@@ -60,7 +60,3 @@ foreach u : [
 ]
   subdir(u)
 endforeach
-
-if get_option('extras')
-  subdir('extra')
-endif

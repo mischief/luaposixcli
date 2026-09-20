@@ -22,6 +22,12 @@ Builds, installs to a temp directory, and drops you into the shell with all util
 
 See [sh/README.md](sh/README.md) for the shell's feature list.
 
+## Non-POSIX programs
+
+The programs unix grew that POSIX never named - ping, top, gzip, sz, rz,
+fetch - live in [lunatix](https://github.com/mischief/lunatix), which uses
+the modules here.
+
 ## Implemented Utilities
 
 | Utility | Description |

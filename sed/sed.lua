@@ -2,23 +2,35 @@
 -- SPDX-License-Identifier: ISC
 local unistd   = require("posix.unistd")
 local fcntl    = require("posix.fcntl")
+local stat     = require("posix.sys.stat")
 local notposix = require("luaposixcli.sys")
 
 local scripts = {}
 local files = {}
 local quiet = false
+local inplace, suffix = false, nil
 
 local i = 1
 while i <= #arg do
 	local a = arg[i]
 	if a == "-n" then quiet = true
 	elseif a == "-e" then i = i + 1; scripts[#scripts + 1] = arg[i]
+	elseif a == "-i" or a:sub(1, 2) == "-i" and #a > 2 then
+		-- -i is not POSIX, but every sed people use has it. A suffix
+		-- attached to it keeps a copy of the original.
+		inplace = true
+		if #a > 2 then suffix = a:sub(3) end
 	elseif a:sub(1, 1) ~= "-" and #scripts == 0 then
 		scripts[#scripts + 1] = a
 	else
 		files[#files + 1] = a
 	end
 	i = i + 1
+end
+
+if inplace and #files == 0 then
+	unistd.write(2, "sed: -i needs a file to edit\n")
+	os.exit(2)
 end
 
 -- parse a sed command: [addr[,addr]]command[args]
@@ -185,70 +197,110 @@ end
 
 -- One line of lookahead, so the $ address knows the last line without
 -- holding the whole input in memory.
-local next_line = line_reader(files)
-local pending = next_line()
-
-local function read_line()
-	local line = pending
-	if line == nil then return nil end
-	pending = next_line()
-	return line, (pending == nil)
+local function stream(paths)
+	local next_line = line_reader(paths)
+	local pending = next_line()
+	return function()
+		local line = pending
+		if line == nil then return nil end
+		pending = next_line()
+		return line, (pending == nil)
+	end
 end
 
--- execute
-local in_range = {}
-local lineno = 0
-while true do
-	local raw, last = read_line()
-	if raw == nil then break end
-	local line = raw
-	lineno = lineno + 1
-	local output = true
-	local print_extra = false
-	local deleted = false
+-- Run the script over one stream, handing each surviving line to emit.
+-- Returns true if the script quit.
+local function run(read_line, emit)
+	local in_range = {}
+	local lineno = 0
 
-	for ci, c in ipairs(commands) do
-		-- check address
-		local match
-		if c.addr1 == nil then
-			match = true
-		elseif c.addr2 == nil then
-			match = addr_match(c.addr1, lineno, line, last)
-		else
-			-- range
-			if in_range[ci] then
+	while true do
+		local raw, last = read_line()
+		if raw == nil then return false end
+		local line = raw
+		lineno = lineno + 1
+		local print_extra = false
+		local deleted = false
+
+		for ci, c in ipairs(commands) do
+			-- check address
+			local match
+			if c.addr1 == nil then
 				match = true
-				if addr_match(c.addr2, lineno, line, last) then
-					in_range[ci] = false
-				end
-			elseif addr_match(c.addr1, lineno, line, last) then
-				match = true
-				in_range[ci] = true
+			elseif c.addr2 == nil then
+				match = addr_match(c.addr1, lineno, line, last)
 			else
-				match = false
+				-- range
+				if in_range[ci] then
+					match = true
+					if addr_match(c.addr2, lineno, line, last) then
+						in_range[ci] = false
+					end
+				elseif addr_match(c.addr1, lineno, line, last) then
+					match = true
+					in_range[ci] = true
+				else
+					match = false
+				end
+			end
+
+			if match and not deleted then
+				if c.cmd == "d" then
+					deleted = true
+				elseif c.cmd == "p" then
+					print_extra = true
+				elseif c.cmd == "q" then
+					if not quiet then emit(line .. "\n") end
+					return true
+				elseif c.cmd == "s" then
+					local new, changed = do_sub(line, c.pattern, c.replacement, c.global)
+					line = new
+					if changed and c.print then print_extra = true end
+				end
 			end
 		end
 
-		if match and not deleted then
-			if c.cmd == "d" then
-				deleted = true
-				output = false
-			elseif c.cmd == "p" then
-				print_extra = true
-			elseif c.cmd == "q" then
-				if not quiet then unistd.write(1, line .. "\n") end
-				os.exit(exit_status)
-			elseif c.cmd == "s" then
-				local new, changed = do_sub(line, c.pattern, c.replacement, c.global)
-				line = new
-				if changed and c.print then print_extra = true end
-			end
+		if not deleted then
+			if not quiet then emit(line .. "\n") end
+			if print_extra then emit(line .. "\n") end
 		end
 	end
+end
 
-	if not deleted then
-		if not quiet then unistd.write(1, line .. "\n") end
-		if print_extra then unistd.write(1, line .. "\n") end
+if not inplace then
+	run(stream(files), function(text) unistd.write(1, text) end)
+	os.exit(exit_status)
+end
+
+-- -i edits each file on its own, so line numbers and $ are per file, and
+-- the result goes through a temporary in the same directory.
+for _, path in ipairs(files) do
+	local st = stat.stat(path)
+	if not st then
+		unistd.write(2, "sed: can't read " .. path .. ": No such file or directory\n")
+		exit_status = 2
+	else
+		local tmp = path .. ".sed" .. unistd.getpid()
+		local out, oerr = io.open(tmp, "wb")
+		if not out then
+			unistd.write(2, "sed: " .. (oerr or (tmp .. ": cannot write")) .. "\n")
+			exit_status = 2
+		else
+			local quit = run(stream({ path }), function(text) out:write(text) end)
+			out:close()
+			if suffix and suffix ~= "" then
+				os.rename(path, path .. suffix)
+			end
+			local ok, rerr = os.rename(tmp, path)
+			if not ok then
+				unistd.write(2, "sed: " .. (rerr or (path .. ": cannot replace")) .. "\n")
+				os.remove(tmp)
+				exit_status = 2
+			else
+				stat.chmod(path, st.st_mode & tonumber("7777", 8))
+			end
+			if quit then break end
+		end
 	end
 end
 

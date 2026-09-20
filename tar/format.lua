@@ -7,6 +7,18 @@ local M = {}
 
 local BLOCK = 512
 
+-- An archive is either a file descriptor or a table with read(n)/write(s).
+-- The table form is what the compressed path uses to work from memory.
+local function sread(fd, n)
+	if type(fd) == "table" then return fd:read(n) end
+	return unistd.read(fd, n)
+end
+
+local function swrite(fd, data)
+	if type(fd) == "table" then return fd:write(data) end
+	return unistd.write(fd, data)
+end
+
 -- ustar header field offsets and sizes (0-indexed in spec, 1-indexed here)
 local FIELDS = {
 	name     = { 1,   100 },
@@ -185,7 +197,7 @@ end
 -- Read one entry (header + data) from a file descriptor.
 -- Returns header, data (string) or nil on EOF.
 function M.read_entry(fd)
-	local block = unistd.read(fd, BLOCK)
+	local block = sread(fd, BLOCK)
 	if not block or #block < BLOCK then return nil end
 
 	local hdr, err = M.decode_header(block)
@@ -194,7 +206,7 @@ function M.read_entry(fd)
 	local data = ""
 	if hdr.size > 0 then
 		local to_read = M.data_blocks(hdr.size) * BLOCK
-		data = unistd.read(fd, to_read) or ""
+		data = sread(fd, to_read) or ""
 		data = data:sub(1, hdr.size) -- trim padding
 	end
 
@@ -203,10 +215,9 @@ end
 
 -- Write one entry (header + padded data) to a file descriptor.
 function M.write_entry(fd, hdr, data)
-	local header_block = M.encode_header(hdr)
-	unistd.write(fd, header_block)
+	swrite(fd, M.encode_header(hdr))
 	if data and #data > 0 then
-		unistd.write(fd, M.pad_data(data))
+		swrite(fd, M.pad_data(data))
 	end
 end
 

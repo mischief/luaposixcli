@@ -13,14 +13,16 @@ local grp = require("posix.grp")
 local format = require("tar.format")
 
 local mode, archive, verbose, files = nil, nil, false, {}
+local compress = false
 
--- Parse arguments: tar [cxtv]f archive [files...]
+-- Parse arguments: tar [cxtvz]f archive [files...]
 local flags = arg[1] or ""
 if flags:find("c") then mode = "create"
 elseif flags:find("x") then mode = "extract"
 elseif flags:find("t") then mode = "list"
 end
 if flags:find("v") then verbose = true end
+if flags:find("z") then compress = true end
 
 if flags:find("f") then
 	archive = arg[2]
@@ -34,6 +36,7 @@ else
 		elseif a == "-x" then mode = "extract"
 		elseif a == "-t" then mode = "list"
 		elseif a == "-v" then verbose = true
+		elseif a == "-z" then compress = true
 		elseif a == "-f" then i = i + 1; archive = arg[i]
 		elseif a:sub(1, 1) ~= "-" and not archive then
 			-- already parsed flags above
@@ -45,8 +48,64 @@ else
 end
 
 if not mode or not archive then
-	unistd.write(2, "usage: tar {c|x|t}[v]f archive [file...]\n")
+	unistd.write(2, "usage: tar {c|x|t}[vz]f archive [file...]\n")
 	os.exit(1)
+end
+
+local gzip = require("luaposixcli.zlib.gzip")
+
+-- An archive built in memory, so it can be compressed in one piece
+local function mem_sink()
+	local parts = {}
+	return {
+		write = function(self, data) parts[#parts + 1] = data end,
+		result = function(self) return table.concat(parts) end,
+	}
+end
+
+local function mem_source(data)
+	local pos = 1
+	return {
+		read = function(self, n)
+			if pos > #data then return nil end
+			local chunk = data:sub(pos, pos + n - 1)
+			pos = pos + #chunk
+			return chunk
+		end,
+	}
+end
+
+local function read_all(fd)
+	local chunks = {}
+	while true do
+		local data = unistd.read(fd, 65536)
+		if not data or data == "" then break end
+		chunks[#chunks + 1] = data
+	end
+	return table.concat(chunks)
+end
+
+-- Open the archive for reading. A gzip archive is recognized by its magic,
+-- so -z is not needed to read one.
+local function open_input()
+	local fd
+	if archive == "-" then fd = 0
+	else fd = fcntl.open(archive, fcntl.O_RDONLY) end
+	if not fd then
+		unistd.write(2, "tar: cannot open " .. archive .. "\n")
+		os.exit(1)
+	end
+	local data = read_all(fd)
+	if fd ~= 0 then unistd.close(fd) end
+	if data:byte(1) == 0x1f and data:byte(2) == 0x8b then
+		local out, err = gzip.decompress(data)
+		if not out then
+			unistd.write(2, "tar: " .. archive .. ": " .. err .. "\n")
+			os.exit(1)
+		end
+		data = out
+	end
+	return mem_source(data)
 end
 
 -- Recursively add a path to the archive
@@ -109,46 +168,52 @@ if mode == "create" then
 		unistd.write(2, "tar: no files to archive\n")
 		os.exit(1)
 	end
-	local fd
-	if archive == "-" then
+	local fd, sink
+	if compress then
+		sink = mem_sink()
+	elseif archive == "-" then
 		fd = 1
 	else
 		fd = fcntl.open(archive, fcntl.O_WRONLY + fcntl.O_CREAT + fcntl.O_TRUNC, 420)
+		if not fd then
+			unistd.write(2, "tar: cannot open " .. archive .. "\n")
+			os.exit(1)
+		end
 	end
-	if not fd then
-		unistd.write(2, "tar: cannot open " .. archive .. "\n")
-		os.exit(1)
-	end
+	local out = sink or fd
 	for _, f in ipairs(files) do
 		-- Strip trailing slash for consistency
-		add_path(fd, f:gsub("/$", ""))
+		add_path(out, f:gsub("/$", ""))
 	end
-	unistd.write(fd, format.eof_marker())
-	if fd ~= 1 then unistd.close(fd) end
+	if sink then
+		sink:write(format.eof_marker())
+		local data = gzip.compress(sink:result())
+		if archive == "-" then
+			unistd.write(1, data)
+		else
+			fd = fcntl.open(archive, fcntl.O_WRONLY + fcntl.O_CREAT + fcntl.O_TRUNC, 420)
+			if not fd then
+				unistd.write(2, "tar: cannot open " .. archive .. "\n")
+				os.exit(1)
+			end
+			unistd.write(fd, data)
+			unistd.close(fd)
+		end
+	else
+		unistd.write(fd, format.eof_marker())
+		if fd ~= 1 then unistd.close(fd) end
+	end
 
 elseif mode == "list" then
-	local fd
-	if archive == "-" then fd = 0
-	else fd = fcntl.open(archive, fcntl.O_RDONLY) end
-	if not fd then
-		unistd.write(2, "tar: cannot open " .. archive .. "\n")
-		os.exit(1)
-	end
+	local fd = open_input()
 	while true do
 		local hdr = format.read_entry(fd)
 		if not hdr then break end
 		unistd.write(1, hdr.name .. "\n")
 	end
-	if fd ~= 0 then unistd.close(fd) end
 
 elseif mode == "extract" then
-	local fd
-	if archive == "-" then fd = 0
-	else fd = fcntl.open(archive, fcntl.O_RDONLY) end
-	if not fd then
-		unistd.write(2, "tar: cannot open " .. archive .. "\n")
-		os.exit(1)
-	end
+	local fd = open_input()
 
 	-- Sanitize a path: reject absolute paths and components that escape via ..
 	local function safe_path(name)
@@ -231,5 +296,4 @@ elseif mode == "extract" then
 			end
 		end
 	end
-	if fd ~= 0 then unistd.close(fd) end
 end

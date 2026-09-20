@@ -11,7 +11,7 @@ end
 
 local unistd = require("posix.unistd")
 local buffer = require("ed.buffer")
-local term = require("ed.terminfo").new()
+local term = require("luaposixcli.term").new()
 
 -- Parse options
 local readonly = false

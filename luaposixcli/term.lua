@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: ISC
--- ed/terminfo.lua - terminal control using ANSI/VT100 escape sequences
+-- luaposixcli/term.lua - terminal control using ANSI/VT100 escape sequences
 local unistd = require("posix.unistd")
 local termio = require("posix.termio")
 

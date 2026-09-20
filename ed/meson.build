@@ -18,11 +18,7 @@ install_data('vi.lua',
   install_mode: 'rwxr-xr-x',
 )
 
-install_data(
-  'buffer.lua',
-  'terminfo.lua',
-  install_dir: lua_mod_dir / 'ed',
-)
+install_data('buffer.lua', install_dir: lua_mod_dir / 'ed')
 
 if busted.found()
   test('ed.buffer', busted,

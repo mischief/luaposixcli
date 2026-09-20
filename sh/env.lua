@@ -107,7 +107,10 @@ function M.get(name)
 		for i = 2, #argv do
 			t[#t + 1] = argv[i]
 		end
-		return table.concat(t, " ")
+		-- $* joins on the first character of IFS; an unset IFS means a space
+		local ifs = vars.IFS
+		local sep = ifs == nil and " " or ifs:sub(1, 1)
+		return table.concat(t, sep)
 	end
 	return vars[name]
 end

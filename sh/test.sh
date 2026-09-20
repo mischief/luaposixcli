@@ -94,6 +94,15 @@ printf 'PROFILE_RAN=yes\nexport PROFILE_RAN\n' > "$TMPH/.profile"
 [ "$(printf 'x=world\ncat <<EOF\nH $((1+1)) $x\nEOF\necho next\n' | $SH)" = "$(printf 'H 2 world\nnext')" ] &&
 [ "$(printf "cat <<'EOF'\nliteral \$x\nEOF\n" | $SH)" = 'literal $x' ] &&
 [ "$(printf 'cat <<EOF\na\n\nb\nEOF\n' | $SH | wc -l)" = "3" ] &&
+# "$@" is one field per parameter; "$*" is one field joined on IFS
+[ "$($SH -c 'set -- a b c; printf "[%s]" "$@"')" = "[a][b][c]" ] &&
+[ "$($SH -c 'set -- "x y" z; printf "[%s]" "$@"')" = "[x y][z]" ] &&
+[ "$($SH -c 'set -- a b; printf "[%s]" "pre$@post"')" = "[prea][bpost]" ] &&
+[ "$($SH -c 'set --; printf "[%s]" "$@"')" = "[]" ] &&
+[ "$($SH -c 'f() { printf "[%s]" "$@"; }; f 1 "2 3" 4')" = "[1][2 3][4]" ] &&
+[ "$($SH -c 'set -- a b; printf "[%s]" "$*"')" = "[a b]" ] &&
+[ "$($SH -c 'IFS=:; set -- a b; printf "[%s]" "$*"')" = "[a:b]" ] &&
+[ "$($SH -c 'IFS=:; set -- a b; printf "[%s]" "$@"')" = "[a][b]" ] &&
 # a login shell reads the profiles, an ordinary one does not.
 # /etc/profile is read first and may print anything, so match loosely.
 HOME=$TMPH $SH -l -c 'echo $PROFILE_RAN' 2>/dev/null | grep -q yes &&

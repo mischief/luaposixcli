@@ -637,7 +637,8 @@ arith_eval = function(expr)
 end
 
 -- Same grammar as word_pat, but each piece is kept separate and tagged so
--- field splitting can tell an unquoted expansion from literal text.
+-- field splitting can tell an unquoted expansion from literal text, and
+-- so "$@" can become one field per positional parameter.
 local function tag_literal(v)
 	return { text = v, split = false }
 end
@@ -646,8 +647,24 @@ local function tag_split(v)
 	return { text = v, split = true }
 end
 
+local function tag_params()
+	return { params = true }
+end
+
+local params_ref = (P("$@") + P("${@}")) / tag_params
+
+-- A double-quoted section is kept as a list of parts, because "$@" inside
+-- it ends one field and starts the next.
+local dq_part = params_ref + cmdsub_pat + dollar_exp + dq_escape
+	+ C(1 - P('"') - P("\\"))
+local dq_section = P('"') * Ct(dq_part ^ 0) * P('"') / function(parts)
+	return { quoted = true, parts = parts }
+end
+
 local piece_pat = Ct((
-	(sq_lit + dq_lit) / tag_literal
+	sq_lit / tag_literal
+	+ dq_section
+	+ params_ref
 	+ (cmdsub_pat + dollar_exp) / tag_split
 	+ C(1 - lpeg.S("'\"")) / tag_literal
 ) ^ 0)
@@ -665,38 +682,71 @@ local function expand_fields(s)
 	if ifs == nil then ifs = " \t\n" end
 	local fields = {}
 	local cur = nil
-	for _, piece in ipairs(pieces) do
-		if not piece.split or ifs == "" then
-			cur = (cur or "") .. piece.text
-		else
-			local text, i = piece.text, 1
-			while i <= #text do
-				local c = text:sub(i, i)
-				if not ifs:find(c, 1, true) then
-					cur = (cur or "") .. c
-					i = i + 1
-				else
-					-- one delimiter: a run of IFS whitespace around at most
-					-- one non-whitespace IFS character
-					local sawnonwhite = false
-					while i <= #text do
-						local d = text:sub(i, i)
-						if not ifs:find(d, 1, true) then break end
-						if is_ifs_white(d) then
-							i = i + 1
-						elseif not sawnonwhite then
-							sawnonwhite = true
-							i = i + 1
-						else
-							break
-						end
-					end
-					if cur ~= nil or sawnonwhite then
-						fields[#fields + 1] = cur or ""
-						cur = nil
+
+	local function flush()
+		fields[#fields + 1] = cur or ""
+		cur = nil
+	end
+
+	-- add text that came from an unquoted expansion, breaking it at IFS
+	local function add_split(text)
+		local i = 1
+		while i <= #text do
+			local c = text:sub(i, i)
+			if not ifs:find(c, 1, true) then
+				cur = (cur or "") .. c
+				i = i + 1
+			else
+				-- one delimiter: a run of IFS whitespace around at most
+				-- one non-whitespace IFS character
+				local sawnonwhite = false
+				while i <= #text do
+					local d = text:sub(i, i)
+					if not ifs:find(d, 1, true) then break end
+					if is_ifs_white(d) then
+						i = i + 1
+					elseif not sawnonwhite then
+						sawnonwhite = true
+						i = i + 1
+					else
+						break
 					end
 				end
+				if cur ~= nil or sawnonwhite then flush() end
 			end
+		end
+	end
+
+	-- "$@" is one field per positional parameter: the first joins whatever
+	-- precedes it, the last stays open for whatever follows.
+	local function add_params(split)
+		local argv = env.get_argv()
+		for i = 2, #argv do
+			if i > 2 then flush() end
+			if split and ifs ~= "" then
+				add_split(argv[i])
+			else
+				cur = (cur or "") .. argv[i]
+			end
+		end
+	end
+
+	for _, piece in ipairs(pieces) do
+		if piece.params then
+			add_params(true)
+		elseif piece.quoted then
+			if #piece.parts == 0 then cur = cur or "" end
+			for _, part in ipairs(piece.parts) do
+				if type(part) == "table" and part.params then
+					add_params(false)
+				else
+					cur = (cur or "") .. part
+				end
+			end
+		elseif not piece.split or ifs == "" then
+			cur = (cur or "") .. piece.text
+		else
+			add_split(piece.text)
 		end
 	end
 	if cur ~= nil then fields[#fields + 1] = cur end

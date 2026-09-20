@@ -13,6 +13,16 @@ luaposixcli_sys = shared_library('sys', 'sys.c',
   install_dir: lua_lib_dir / 'luaposixcli',
 )
 
+# The zlib modules are extras: pure Lua, no build step, installed only
+# when extras are wanted.
+if get_option('extras')
+  install_data(
+    'zlib/init.lua', 'zlib/deflate.lua', 'zlib/inflate.lua',
+    'zlib/gzip.lua', 'zlib/store.lua',
+    install_dir: lua_mod_dir / 'luaposixcli' / 'zlib',
+  )
+endif
+
 test_env = environment()
 test_env.append('LUA_CPATH', meson.project_build_root() / '?.so;;', separator: ';')
 

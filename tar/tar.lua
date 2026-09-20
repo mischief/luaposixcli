@@ -11,6 +11,7 @@ local stat = require("posix.sys.stat")
 local pwd = require("posix.pwd")
 local grp = require("posix.grp")
 local format = require("tar.format")
+local util = require("luaposixcli.util")
 
 local mode, archive, verbose, files = nil, nil, false, {}
 local compress = false
@@ -75,16 +76,6 @@ local function mem_source(data)
 	}
 end
 
-local function read_all(fd)
-	local chunks = {}
-	while true do
-		local data = unistd.read(fd, 65536)
-		if not data or data == "" then break end
-		chunks[#chunks + 1] = data
-	end
-	return table.concat(chunks)
-end
-
 -- Open the archive for reading. A gzip archive is recognized by its magic,
 -- so -z is not needed to read one.
 local function open_input()
@@ -95,7 +86,7 @@ local function open_input()
 		unistd.write(2, "tar: cannot open " .. archive .. "\n")
 		os.exit(1)
 	end
-	local data = read_all(fd)
+	local data = util.slurp_fd(fd) or ""
 	if fd ~= 0 then unistd.close(fd) end
 	if data:byte(1) == 0x1f and data:byte(2) == 0x8b then
 		local out, err = gzip.decompress(data)

@@ -13,6 +13,8 @@ luaposixcli_sys = shared_library('sys', 'sys.c',
   install_dir: lua_lib_dir / 'luaposixcli',
 )
 
+install_data('term.lua', 'util.lua', install_dir: lua_mod_dir / 'luaposixcli')
+
 # tar -z needs these, so they install with the rest of the modules.
 install_data(
   'zlib/init.lua', 'zlib/deflate.lua', 'zlib/inflate.lua',
@@ -24,6 +26,11 @@ test_env = environment()
 test_env.append('LUA_CPATH', meson.project_build_root() / '?.so;;', separator: ';')
 
 if busted.found()
+  test('luaposixcli.util', busted,
+    args: ['--lua=' + lua_name, meson.current_source_dir() / 'util_test.lua'],
+    workdir: meson.project_source_root(),
+  )
+
   test('luaposixcli.sys', busted,
     args: ['--lua=' + lua_name, meson.current_source_dir() / 'sys_test.lua'],
     workdir: meson.project_source_root(),

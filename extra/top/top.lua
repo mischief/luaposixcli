@@ -7,12 +7,10 @@ package.path = prefix .. "?.lua;" .. prefix .. "share/lua/5.4/?.lua;" .. package
 local unistd = require("posix.unistd")
 local poll = require("posix.poll")
 local list = require("ps.list")
-local terminfo = require("ed.terminfo")
+local terminfo = require("luaposixcli.term")
+local util = require("luaposixcli.util")
 
-local function die(msg)
-	io.stderr:write("top: " .. msg .. "\n")
-	os.exit(1)
-end
+local die = util.die
 
 local delay, frames = 2, 0
 

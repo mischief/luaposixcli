@@ -5,8 +5,9 @@ local gzip = require("luaposixcli.zlib.gzip")
 local stat = require("posix.sys.stat")
 local unistd = require("posix.unistd")
 local utime = require("posix.utime")
+local util = require("luaposixcli.util")
 
-local prog = (arg[0] or "gzip"):match("([^/]+)$"):gsub("%.lua$", "")
+local prog = util.prog
 
 local decompress = (prog == "gunzip" or prog == "zcat")
 local to_stdout = (prog == "zcat")
@@ -16,7 +17,7 @@ local files = {}
 local status = 0
 
 local function warn(msg)
-	unistd.write(2, prog .. ": " .. msg .. "\n")
+	util.warn(msg)
 	if status < 1 then status = 1 end
 end
 
@@ -45,23 +46,6 @@ while i <= #arg do
 		files[#files + 1] = a
 	end
 	i = i + 1
-end
-
-local function read_all(path)
-	if path == nil then
-		local chunks = {}
-		while true do
-			local data = unistd.read(0, 65536)
-			if not data or data == "" then break end
-			chunks[#chunks + 1] = data
-		end
-		return table.concat(chunks)
-	end
-	local f, err = io.open(path, "rb")
-	if not f then return nil, err end
-	local data = f:read("*a")
-	f:close()
-	return data
 end
 
 local function write_file(path, data, mode, mtime)
@@ -100,7 +84,7 @@ local function report(inname, insize, outsize)
 end
 
 local function one(path)
-	local data, err = read_all(path)
+	local data, err = util.slurp(path)
 	if not data then
 		warn(err or ((path or "stdin") .. ": cannot read"))
 		return

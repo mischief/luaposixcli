@@ -20,6 +20,9 @@ for opt, optarg, oi in unistd.getopt(arg, "F:f:v:") do
 	if opt == "F" then fs_opt = optarg
 	elseif opt == "f" then prog_files[#prog_files + 1] = optarg
 	elseif opt == "v" then assignments[#assignments + 1] = optarg
+	else
+		io.stderr:write("usage: awk [-F sepstring] [-v assignment]... program [argument...]\n")
+		os.exit(2)
 	end
 	optind = oi
 end

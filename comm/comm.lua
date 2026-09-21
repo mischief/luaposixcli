@@ -10,6 +10,9 @@ for opt, optarg, oi in unistd.getopt(arg, "123") do
 	if opt == "1" then suppress[1] = true
 	elseif opt == "2" then suppress[2] = true
 	elseif opt == "3" then suppress[3] = true
+	else
+		unistd.write(2, "usage: comm [-123] file1 file2\n")
+		os.exit(2)
 	end
 	optind = oi
 end

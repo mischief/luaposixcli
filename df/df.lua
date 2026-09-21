@@ -5,8 +5,13 @@ local statvfs = require("posix.sys.statvfs")
 
 local human = false
 local optind = 1
-for opt, optarg, oi in unistd.getopt(arg, "h") do
-	if opt == "h" then human = true end
+for opt, _, oi in unistd.getopt(arg, "h") do
+	if opt == "h" then
+		human = true
+	else
+		unistd.write(2, "usage: df [-h] [file...]\n")
+		os.exit(2)
+	end
 	optind = oi
 end
 

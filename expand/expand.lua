@@ -13,6 +13,9 @@ for opt, optarg, oi in unistd.getopt(arg, "t:") do
 			tabstops[#tabstops + 1] = tonumber(n)
 		end
 		if #tabstops == 0 then tabstops = { 8 } end
+	else
+		unistd.write(2, "usage: expand [-t tablist] [file...]\n")
+		os.exit(2)
 	end
 	optind = oi
 end

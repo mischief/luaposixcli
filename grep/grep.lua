@@ -26,6 +26,9 @@ for opt, optarg, oi in unistd.getopt(arg, "EFivclnqe:") do
 	elseif opt == "n" then line_numbers = true
 	elseif opt == "q" then quiet = true
 	elseif opt == "e" then pattern = optarg
+	else
+		unistd.write(2, "usage: grep [-EFcilnqv] [-e pattern] [file...]\n")
+		os.exit(2)
 	end
 	optind = oi
 end

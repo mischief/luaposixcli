@@ -13,6 +13,9 @@ for opt, optarg, oi in unistd.getopt(arg, "at:") do
 		all = true
 	elseif opt == "a" then
 		all = true
+	else
+		unistd.write(2, "usage: unexpand [-a] [-t tablist] [file...]\n")
+		os.exit(2)
 	end
 	optind = oi
 end

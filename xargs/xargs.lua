@@ -11,6 +11,9 @@ local optind = 1
 for opt, optarg, oi in unistd.getopt(arg, "n:L:I:") do
 	if     opt == "n" then max_args = tonumber(optarg)
 	elseif opt == "L" then one_per_line = true; max_args = tonumber(optarg) or 1
+	else
+		unistd.write(2, "usage: xargs [-n number] [-L number] [-I replstr] [utility [argument...]]\n")
+		os.exit(2)
 	end
 	optind = oi
 end

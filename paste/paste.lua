@@ -12,6 +12,9 @@ for opt, optarg, oi in unistd.getopt(arg, "sd:") do
 		delimiters = optarg
 	elseif opt == "s" then
 		serial = true
+	else
+		unistd.write(2, "usage: paste [-s] [-d list] file...\n")
+		os.exit(2)
 	end
 	optind = oi
 end

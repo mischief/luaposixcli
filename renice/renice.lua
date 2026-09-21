@@ -16,6 +16,9 @@ for opt, optarg, oi in unistd.getopt(arg, "n:pgu") do
 		which = notposix.PRIO_PGRP
 	elseif opt == "u" then
 		which = notposix.PRIO_USER
+	else
+		unistd.write(2, "usage: renice -n increment [-gpu] id...\n")
+		os.exit(2)
 	end
 	optind = oi
 end

@@ -12,6 +12,8 @@
 #include <sys/reboot.h>
 #include <grp.h>
 #include <sys/file.h>
+#include <sys/sysmacros.h>
+#include <sys/stat.h>
 #include <limits.h>
 #include <pwd.h>
 #ifdef __linux__
@@ -419,6 +421,43 @@ l_sethostname(lua_State *L)
 	return 1;
 }
 
+/* notposix.mknod(path, mode, major, minor) -- a device node. Making one
+ * is privileged, and luaposix has only mkfifo.
+ */
+static int
+l_mknod(lua_State *L)
+{
+	const char *path = luaL_checkstring(L, 1);
+	mode_t mode = (mode_t)luaL_checkinteger(L, 2);
+	unsigned int major = (unsigned int)luaL_optinteger(L, 3, 0);
+	unsigned int minor = (unsigned int)luaL_optinteger(L, 4, 0);
+
+	if (mknod(path, mode, makedev(major, minor)) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
+/* notposix.major(dev), notposix.minor(dev) -- the two halves of the
+ * device number a stat gives back
+ */
+static int
+l_major(lua_State *L)
+{
+	lua_pushinteger(L, (lua_Integer)major((dev_t)luaL_checkinteger(L, 1)));
+	return 1;
+}
+
+static int
+l_minor(lua_State *L)
+{
+	lua_pushinteger(L, (lua_Integer)minor((dev_t)luaL_checkinteger(L, 1)));
+	return 1;
+}
+
 /* notposix.chroot(path) */
 static int
 l_chroot(lua_State *L)
@@ -600,6 +639,9 @@ static const luaL_Reg notposix_funcs[] = {
 	{"delete_module", l_delete_module},
 	{"sethostname", l_sethostname},
 	{"chroot", l_chroot},
+	{"mknod", l_mknod},
+	{"major", l_major},
+	{"minor", l_minor},
 	{"pivot_root", l_pivot_root},
 	{"swapon", l_swapon},
 	{"swapoff", l_swapoff},

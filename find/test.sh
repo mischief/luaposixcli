@@ -24,4 +24,6 @@ out=$(lua5.4 "$D/find.lua" "$DIR" -type d | wc -l)
 out=$(lua5.4 "$D/find.lua" "$DIR" -maxdepth 1 | wc -l)
 [ "$out" -eq 2 ] || { echo "FAIL: maxdepth ($out)"; exit 1; }
 
-echo "PASS"
+echo "PASS" &&
+# a predicate nobody has is an error, not a silent pass
+! lua5.4 "$D/find.lua" . -nosuchpredicate 2>/dev/null

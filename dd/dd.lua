@@ -24,6 +24,9 @@ for _, a in ipairs(arg) do
 		skip = tonumber(v)
 	elseif k == "seek" then
 		seek = tonumber(v)
+	else
+		unistd.write(2, "dd: unknown operand: " .. a .. "\n")
+		os.exit(2)
 	end
 end
 

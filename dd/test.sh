@@ -7,4 +7,6 @@ lua5.4 "$D/dd.lua" if="$TMP_IN" of="$TMP_OUT" bs=5 count=1 2>/dev/null
 [ "$(cat "$TMP_OUT")" = "abcde" ]
 RET=$?
 rm -f "$TMP_IN" "$TMP_OUT"
-exit $RET
+exit $RET &&
+# an operand nobody has is an error
+! lua5.4 "$D/dd.lua" -Z </dev/null 2>/dev/null

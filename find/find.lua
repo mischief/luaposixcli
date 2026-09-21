@@ -49,6 +49,9 @@ while optind <= #arg do
 		end
 		optind = optind + 1 -- skip ;
 		predicates[#predicates + 1] = { type = "exec", cmd = cmd }
+	else
+		unistd.write(2, "find: unknown predicate: " .. a .. "\n")
+		os.exit(2)
 	end
 end
 

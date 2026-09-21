@@ -7,15 +7,25 @@ local stat = require("posix.sys.stat")
 local summary_only = false
 local human = false
 local block_size = 512
+local all = false
 local total = false
 local optind = 1
 
-for opt, optarg, oi in unistd.getopt(arg, "shk") do
-	if opt == "s" then summary_only = true
+for opt, _, oi in unistd.getopt(arg, "ashk") do
+	if opt == "a" then all = true
+	elseif opt == "s" then summary_only = true
 	elseif opt == "h" then human = true
 	elseif opt == "k" then block_size = 1024
+	else
+		unistd.write(2, "usage: du [-ahks] [file...]\n")
+		os.exit(2)
 	end
 	optind = oi
+end
+
+if all and summary_only then
+	unistd.write(2, "du: -a and -s cannot be given together\n")
+	os.exit(2)
 end
 
 local function format_size(bytes)
@@ -48,7 +58,12 @@ local function du(path)
 		end
 		return total_bytes
 	else
-		return s.st_blocks and s.st_blocks * 512 or s.st_size
+		local bytes = s.st_blocks and s.st_blocks * 512 or s.st_size
+		-- -a counts every file, not just the directories over them
+		if all then
+			unistd.write(1, format_size(bytes) .. "\t" .. path .. "\n")
+		end
+		return bytes
 	end
 end
 

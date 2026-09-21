@@ -18,4 +18,10 @@ out=$(printf '%0100d' 0 | lua5.4 "$D/fold.lua")
 first=$(printf '%s\n' "$out" | head -1)
 [ "${#first}" = "80" ] || { echo "FAIL: default width (got ${#first})"; exit 1; }
 
-echo "PASS"
+echo "PASS" &&
+# a tab counts to the next multiple of eight, unless -b counts bytes
+[ "$(printf 'a\tb\n' | lua5.4 "$D/fold.lua" -w 8 | wc -l)" = "2" ] &&
+[ "$(printf 'a\tb\n' | lua5.4 "$D/fold.lua" -b -w 8 | wc -l)" = "1" ] &&
+# -s breaks at a blank
+[ "$(printf 'aaa bbb\n' | lua5.4 "$D/fold.lua" -s -w 4 | head -1)" = "aaa " ] &&
+! lua5.4 "$D/fold.lua" -Z </dev/null 2>/dev/null

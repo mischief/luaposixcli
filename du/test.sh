@@ -25,4 +25,10 @@ lines=$(lua5.4 "$D/du.lua" "$DIR" | wc -l)
 out=$(lua5.4 "$D/du.lua" -sh "$DIR" | awk '{print $1}')
 echo "$out" | grep -qE '[0-9.]+[KMG]?' || { echo "FAIL: -h format ($out)"; exit 1; }
 
+# -a counts every file, not just the directories over them
+[ "$(lua5.4 "$D/du.lua" -a "$DIR" | wc -l)" -gt "$(lua5.4 "$D/du.lua" "$DIR" | wc -l)" ] ||
+	{ echo "FAIL: -a lists no files"; exit 1; }
+lua5.4 "$D/du.lua" -a -s "$DIR" 2>/dev/null && { echo "FAIL: -a -s allowed"; exit 1; }
+lua5.4 "$D/du.lua" -Z 2>/dev/null && { echo "FAIL: -Z allowed"; exit 1; }
+
 echo "PASS"

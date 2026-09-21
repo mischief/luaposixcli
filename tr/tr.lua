@@ -4,13 +4,29 @@ local unistd = require("posix.unistd")
 
 local delete = false
 local squeeze = false
+local complement = false
 local args = {}
 
-for _, a in ipairs(arg) do
-	if a == "-d" then delete = true
-	elseif a == "-s" then squeeze = true
-	elseif a == "-ds" or a == "-sd" then delete = true; squeeze = true
-	else args[#args + 1] = a end
+local i = 1
+while i <= #arg do
+	local a = arg[i]
+	if a == "--" then
+		for j = i + 1, #arg do args[#args + 1] = arg[j] end
+		break
+	elseif a:sub(1, 1) == "-" and #a > 1 then
+		for c in a:sub(2):gmatch(".") do
+			if c == "d" then delete = true
+			elseif c == "s" then squeeze = true
+			elseif c == "c" or c == "C" then complement = true
+			else
+				unistd.write(2, "usage: tr [-cds] string1 [string2]\n")
+				os.exit(2)
+			end
+		end
+	else
+		args[#args + 1] = a
+	end
+	i = i + 1
 end
 
 -- expand ranges like a-z, character classes like [:upper:]
@@ -43,6 +59,20 @@ end
 
 local set1 = expand(args[1] or "")
 local set2 = expand(args[2] or "")
+
+-- -c works on everything string1 leaves out. With a replacement, every
+-- one of them maps to its last character, which is what tr -c does.
+if complement then
+	local named = {}
+	for n = 1, #set1 do named[set1:sub(n, n)] = true end
+	local rest = {}
+	for byte = 0, 255 do
+		local c = string.char(byte)
+		if not named[c] then rest[#rest + 1] = c end
+	end
+	set1 = table.concat(rest)
+	if set2 ~= "" then set2 = string.rep(set2:sub(-1), #set1) end
+end
 
 -- build translation/delete table
 local map = {}

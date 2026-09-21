@@ -5,6 +5,7 @@ local fcntl = require("posix.fcntl")
 
 local width = 80
 local break_spaces = false
+local count_bytes = false
 
 local optind = 1
 for opt, optarg, oi in unistd.getopt(arg, "bsw:") do
@@ -12,36 +13,49 @@ for opt, optarg, oi in unistd.getopt(arg, "bsw:") do
 		width = tonumber(optarg) or 80
 	elseif opt == "s" then
 		break_spaces = true
+	elseif opt == "b" then
+		count_bytes = true
+	else
+		unistd.write(2, "usage: fold [-bs] [-w width] [file...]\n")
+		os.exit(2)
 	end
 	optind = oi
 end
 
+-- Where a character leaves the cursor. A tab goes to the next multiple
+-- of eight, a backspace steps back and a carriage return goes home: fold
+-- counts what the terminal would show, and -b counts bytes instead.
+local function advance(col, c)
+	if count_bytes then return col + 1 end
+	if c == "\t" then return col + 8 - (col % 8) end
+	if c == "\b" then return col > 0 and col - 1 or 0 end
+	if c == "\r" then return 0 end
+	return col + 1
+end
+
 local function fold_line(line)
-	if #line <= width then
-		unistd.write(1, line .. "\n")
-		return
-	end
-	local pos = 1
-	while pos <= #line do
-		if pos + width - 1 >= #line then
-			unistd.write(1, line:sub(pos) .. "\n")
-			break
-		end
-		local chunk = line:sub(pos, pos + width - 1)
-		if break_spaces then
-			local bp = chunk:match(".*()%s")
-			if bp and bp > 1 then
-				unistd.write(1, line:sub(pos, pos + bp - 1) .. "\n")
-				pos = pos + bp
-			else
-				unistd.write(1, chunk .. "\n")
-				pos = pos + width
+	local start, col = 1, 0
+	local last_blank = nil
+	for i = 1, #line do
+		local c = line:sub(i, i)
+		local next_col = advance(col, c)
+		if next_col > width and i > start then
+			-- -s backs up to the last blank, where there is one
+			local cut = i - 1
+			if break_spaces and last_blank and last_blank >= start then
+				cut = last_blank
 			end
+			unistd.write(1, line:sub(start, cut) .. "\n")
+			start = cut + 1
+			last_blank = nil
+			col = 0
+			for n = start, i do col = advance(col, line:sub(n, n)) end
 		else
-			unistd.write(1, chunk .. "\n")
-			pos = pos + width
+			col = next_col
 		end
+		if c == " " or c == "\t" then last_blank = i end
 	end
+	unistd.write(1, line:sub(start) .. "\n")
 end
 
 local function process(fd)

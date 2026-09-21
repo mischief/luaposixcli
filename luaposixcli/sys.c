@@ -15,6 +15,7 @@
 #include <pwd.h>
 #ifdef __linux__
 #include <shadow.h>
+#include <sys/syscall.h>
 #endif
 #include <regex.h>
 
@@ -333,6 +334,105 @@ l_setgroups(lua_State *L)
 	return 1;
 }
 
+/* Kernel modules. The three calls have no libc wrappers on Linux, so
+ * they go through syscall(2) directly; nothing else offers them.
+ */
+static int
+l_finit_module(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_finit_module)
+	int fd = (int)luaL_checkinteger(L, 1);
+	const char *params = luaL_optstring(L, 2, "");
+	int flags = (int)luaL_optinteger(L, 3, 0);
+
+	if (syscall(SYS_finit_module, fd, params, flags) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "no kernel modules on this system");
+	return 2;
+#endif
+}
+
+static int
+l_init_module(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_init_module)
+	size_t len = 0;
+	const char *image = luaL_checklstring(L, 1, &len);
+	const char *params = luaL_optstring(L, 2, "");
+
+	if (syscall(SYS_init_module, image, (unsigned long)len, params) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "no kernel modules on this system");
+	return 2;
+#endif
+}
+
+static int
+l_delete_module(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_delete_module)
+	const char *name = luaL_checkstring(L, 1);
+	int flags = (int)luaL_optinteger(L, 2, 0);
+
+	if (syscall(SYS_delete_module, name, flags) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "no kernel modules on this system");
+	return 2;
+#endif
+}
+
+/* notposix.sethostname(name) -- privileged, so POSIX does not have it */
+static int
+l_sethostname(lua_State *L)
+{
+	size_t len = 0;
+	const char *name = luaL_checklstring(L, 1, &len);
+
+	if (sethostname(name, len) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
+/* notposix.chroot(path) */
+static int
+l_chroot(lua_State *L)
+{
+	const char *path = luaL_checkstring(L, 1);
+
+	if (chroot(path) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
 static const luaL_Reg notposix_funcs[] = {
 	{"getpriority", l_getpriority},
 	{"setpriority", l_setpriority},
@@ -347,6 +447,11 @@ static const luaL_Reg notposix_funcs[] = {
 	{"getspnam", l_getspnam},
 	{"initgroups", l_initgroups},
 	{"setgroups", l_setgroups},
+	{"init_module", l_init_module},
+	{"finit_module", l_finit_module},
+	{"delete_module", l_delete_module},
+	{"sethostname", l_sethostname},
+	{"chroot", l_chroot},
 	{NULL, NULL}
 };
 

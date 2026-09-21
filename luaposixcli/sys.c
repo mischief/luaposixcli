@@ -537,6 +537,50 @@ l_ioctl(lua_State *L)
 	return 1;
 }
 
+/* notposix.unshare(flags) and setns(fd, type) -- namespaces, which are
+ * Linux's and so nobody else's business.
+ */
+static int
+l_unshare(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_unshare)
+	int flags = (int)luaL_checkinteger(L, 1);
+
+	if (syscall(SYS_unshare, flags) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "namespaces are a Linux thing");
+	return 2;
+#endif
+}
+
+static int
+l_setns(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_setns)
+	int fd = (int)luaL_checkinteger(L, 1);
+	int kind = (int)luaL_optinteger(L, 2, 0);
+
+	if (syscall(SYS_setns, fd, kind) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "namespaces are a Linux thing");
+	return 2;
+#endif
+}
+
 static const luaL_Reg notposix_funcs[] = {
 	{"getpriority", l_getpriority},
 	{"setpriority", l_setpriority},
@@ -561,6 +605,8 @@ static const luaL_Reg notposix_funcs[] = {
 	{"swapoff", l_swapoff},
 	{"flock", l_flock},
 	{"ioctl", l_ioctl},
+	{"unshare", l_unshare},
+	{"setns", l_setns},
 	{NULL, NULL}
 };
 
@@ -593,6 +639,17 @@ luaopen_luaposixcli_sys(lua_State *L)
 	lua_pushinteger(L, MS_REMOUNT);  lua_setfield(L, -2, "MS_REMOUNT");
 	lua_pushinteger(L, MS_NOATIME);  lua_setfield(L, -2, "MS_NOATIME");
 	lua_pushinteger(L, MS_BIND);     lua_setfield(L, -2, "MS_BIND");
+#endif
+#ifdef __linux__
+	/* the namespace flags from sched.h, spelled out so a kernel header
+	 * that is not installed does not take unshare with it */
+	lua_pushinteger(L, 0x00020000); lua_setfield(L, -2, "CLONE_NEWNS");
+	lua_pushinteger(L, 0x04000000); lua_setfield(L, -2, "CLONE_NEWUTS");
+	lua_pushinteger(L, 0x08000000); lua_setfield(L, -2, "CLONE_NEWIPC");
+	lua_pushinteger(L, 0x10000000); lua_setfield(L, -2, "CLONE_NEWUSER");
+	lua_pushinteger(L, 0x20000000); lua_setfield(L, -2, "CLONE_NEWPID");
+	lua_pushinteger(L, 0x40000000); lua_setfield(L, -2, "CLONE_NEWNET");
+	lua_pushinteger(L, 0x02000000); lua_setfield(L, -2, "CLONE_NEWCGROUP");
 #endif
 	lua_pushinteger(L, LOCK_SH); lua_setfield(L, -2, "LOCK_SH");
 	lua_pushinteger(L, LOCK_EX); lua_setfield(L, -2, "LOCK_EX");

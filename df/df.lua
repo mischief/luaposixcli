@@ -14,6 +14,7 @@ for opt, _, oi in unistd.getopt(arg, "h") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local paths = {}
 for i = optind, #arg do paths[#paths + 1] = arg[i] end

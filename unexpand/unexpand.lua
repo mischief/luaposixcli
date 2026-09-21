@@ -19,6 +19,7 @@ for opt, optarg, oi in unistd.getopt(arg, "at:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local function unexpand_line(line)
 	local out = {}

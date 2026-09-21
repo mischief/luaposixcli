@@ -28,6 +28,7 @@ for opt, optarg, oi in unistd.getopt(arg, "rwvf:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 for i = optind, #arg do files[#files + 1] = arg[i] end
 
 -- Shared: safe path check (same as tar)

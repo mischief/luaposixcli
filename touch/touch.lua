@@ -24,6 +24,7 @@ for opt, optarg, oi in unistd.getopt(arg, "acmr:t:") do
 	else usage() end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local files = {}
 for i = optind, #arg do files[#files + 1] = arg[i] end

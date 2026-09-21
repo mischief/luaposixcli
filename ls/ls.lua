@@ -32,6 +32,7 @@ for opt, _, oi in unistd.getopt(arg, "adl1R") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 for i = optind, #arg do
 	paths[#paths + 1] = arg[i]
 end

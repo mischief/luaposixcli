@@ -24,6 +24,7 @@ for opt, optarg, oi in unistd.getopt(a, "s") do
 	end
 	optind = oi
 end
+if a[optind] == "--" then optind = optind + 1 end
 
 if a[optind] then file = a[optind] end
 

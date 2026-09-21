@@ -25,6 +25,7 @@ for opt, _, oi in unistd.getopt(arg, "R") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local mode_str = arg[optind]
 local files = {}

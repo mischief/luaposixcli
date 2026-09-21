@@ -5,7 +5,7 @@ local notposix = require("luaposixcli.sys")
 
 local incr = nil
 local which = notposix.PRIO_PROCESS
-local optind = 0
+local optind = 1
 
 for opt, optarg, oi in unistd.getopt(arg, "n:pgu") do
 	if opt == "n" then
@@ -22,6 +22,7 @@ for opt, optarg, oi in unistd.getopt(arg, "n:pgu") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local ids = {}
 for i = optind, #arg do

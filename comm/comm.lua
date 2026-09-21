@@ -16,6 +16,7 @@ for opt, optarg, oi in unistd.getopt(arg, "123") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 if #arg - optind + 1 ~= 2 then
 	unistd.write(2, "usage: comm [-123] file1 file2\n")

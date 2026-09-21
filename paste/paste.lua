@@ -18,6 +18,7 @@ for opt, optarg, oi in unistd.getopt(arg, "sd:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local files = {}
 for i = optind, #arg do

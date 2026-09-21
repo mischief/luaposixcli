@@ -30,6 +30,7 @@ for opt, optarg, oi in unistd.getopt(arg, "t:p:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 -- Remaining args are the message
 local msg_parts = {}

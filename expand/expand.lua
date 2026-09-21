@@ -19,6 +19,7 @@ for opt, optarg, oi in unistd.getopt(arg, "t:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local function next_tab(col)
 	if #tabstops == 1 then

@@ -17,6 +17,7 @@ for opt, optarg, oi in unistd.getopt(arg, "n:L:I:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 if optind <= #arg then
 	cmd = {}

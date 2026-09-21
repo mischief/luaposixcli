@@ -12,4 +12,7 @@ mkdir -p "$TMPD/a/b" && : > "$TMPD/a/b/f" &&
 lua5.4 "$D/rm.lua" -r "$TMPD/a" && [ ! -d "$TMPD/a" ] &&
 lua5.4 "$D/rm.lua" -f "$TMPD/gone" &&
 ! lua5.4 "$D/rm.lua" -Z 2>/dev/null &&
+# -- ends the options, so a file whose name starts with - can be removed
+: > "$TMPD/-f" &&
+lua5.4 "$D/rm.lua" -- "$TMPD/-f" && [ ! -f "$TMPD/-f" ] &&
 rmdir "$TMPD"

@@ -24,6 +24,7 @@ for opt, _, oi in unistd.getopt(arg, "benstuvAET") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local plain = not (number_all or number_nonblank or squeeze
 	or show_ends or show_tabs or show_nonprint)

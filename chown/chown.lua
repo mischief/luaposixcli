@@ -20,6 +20,7 @@ for opt, _, oi in unistd.getopt(arg, "hR") do
 	else usage() end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 local spec = arg[optind]
 if not spec or optind + 1 > #arg then usage() end

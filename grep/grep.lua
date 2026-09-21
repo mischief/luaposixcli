@@ -32,6 +32,7 @@ for opt, optarg, oi in unistd.getopt(arg, "EFivclnqe:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 -- first non-option arg is pattern if not set via -e
 if not pattern then

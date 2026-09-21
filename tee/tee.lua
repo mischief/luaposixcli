@@ -16,6 +16,7 @@ for opt, _, oi in unistd.getopt(arg, "ai") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 -- -i is about the interrupt, which is the only signal tee is told to
 -- ignore; the rest still end it

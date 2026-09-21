@@ -22,6 +22,7 @@ for opt, _, oi in unistd.getopt(arg, "ashk") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 if all and summary_only then
 	unistd.write(2, "du: -a and -s cannot be given together\n")

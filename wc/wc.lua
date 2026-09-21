@@ -16,6 +16,7 @@ for opt, _, oi in unistd.getopt(arg, "clmw") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 if not (want_lines or want_words or want_bytes or want_chars) then
 	want_lines, want_words, want_bytes = true, true, true

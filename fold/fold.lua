@@ -21,6 +21,7 @@ for opt, optarg, oi in unistd.getopt(arg, "bsw:") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 -- Where a character leaves the cursor. A tab goes to the next multiple
 -- of eight, a backspace steps back and a carriage return goes home: fold

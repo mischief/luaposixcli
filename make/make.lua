@@ -79,6 +79,7 @@ for opt, optarg, oi in unistd.getopt(arg, "einpqrstf:j:kS") do
 	end
 	optind = oi
 end
+if arg[optind] == "--" then optind = optind + 1 end
 
 -- Remaining arguments: macro=value or targets
 for i = optind, #arg do

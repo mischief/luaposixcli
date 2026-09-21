@@ -36,6 +36,11 @@ OUT=$(lua5.4 "$D/ls.lua" -ld "$TMP")
 echo "$OUT" | grep -q "^d" || exit 1
 echo "$OUT" | grep -q "afile" && exit 1
 
+# -- ends the options, so a file named like one can be listed
+touch "$TMP/-l"
+[ "$(lua5.4 "$D/ls.lua" -- "$TMP/-l")" = "$TMP/-l" ] || exit 1
+rm -f "$TMP/-l"
+
 # a symlink in a long listing shows what it points at
 ln -s afile "$TMP/alink"
 lua5.4 "$D/ls.lua" -l "$TMP" | grep -q "alink -> afile" || exit 1

@@ -10,6 +10,12 @@
 #include <sys/resource.h>
 #include <sys/mount.h>
 #include <sys/reboot.h>
+#include <grp.h>
+#include <limits.h>
+#include <pwd.h>
+#ifdef __linux__
+#include <shadow.h>
+#endif
 #include <regex.h>
 
 #include <lua.h>
@@ -248,6 +254,85 @@ l_reboot(lua_State *L)
 	return 1;
 }
 
+/* notposix.getspnam(name) -> the shadow entry, where there is one.
+ * POSIX has nothing to say about shadow passwords, so luaposix has no
+ * binding for this and login has nowhere else to get the hash.
+ */
+static int
+l_getspnam(lua_State *L)
+{
+#ifdef __linux__
+	const char *name = luaL_checkstring(L, 1);
+	struct spwd *sp = getspnam(name);
+
+	if (sp == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, errno ? strerror(errno) : "no such user");
+		return 2;
+	}
+	lua_newtable(L);
+	lua_pushstring(L, sp->sp_namp);  lua_setfield(L, -2, "sp_namp");
+	lua_pushstring(L, sp->sp_pwdp ? sp->sp_pwdp : "");
+	lua_setfield(L, -2, "sp_pwdp");
+	lua_pushinteger(L, sp->sp_lstchg); lua_setfield(L, -2, "sp_lstchg");
+	lua_pushinteger(L, sp->sp_min);    lua_setfield(L, -2, "sp_min");
+	lua_pushinteger(L, sp->sp_max);    lua_setfield(L, -2, "sp_max");
+	lua_pushinteger(L, sp->sp_expire); lua_setfield(L, -2, "sp_expire");
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "no shadow file on this system");
+	return 2;
+#endif
+}
+
+/* notposix.initgroups(user, gid) -- the supplementary groups that go with
+ * an account. Dropping privilege without this leaves the new user in the
+ * groups the old one had.
+ */
+static int
+l_initgroups(lua_State *L)
+{
+	const char *user = luaL_checkstring(L, 1);
+	gid_t gid = (gid_t)luaL_checkinteger(L, 2);
+
+	if (initgroups(user, gid) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
+/* notposix.setgroups(list) -- the supplementary groups, given outright */
+static int
+l_setgroups(lua_State *L)
+{
+	gid_t list[NGROUPS_MAX];
+	int n = 0;
+
+	luaL_checktype(L, 1, LUA_TTABLE);
+	lua_pushnil(L);
+	while (lua_next(L, 1) != 0) {
+		if (n >= NGROUPS_MAX) {
+			lua_pop(L, 2);
+			lua_pushnil(L);
+			lua_pushstring(L, "too many groups");
+			return 2;
+		}
+		list[n++] = (gid_t)lua_tointeger(L, -1);
+		lua_pop(L, 1);
+	}
+	if (setgroups((size_t)n, list) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
 static const luaL_Reg notposix_funcs[] = {
 	{"getpriority", l_getpriority},
 	{"setpriority", l_setpriority},
@@ -259,6 +344,9 @@ static const luaL_Reg notposix_funcs[] = {
 	{"mount", l_mount},
 	{"umount", l_umount},
 	{"reboot", l_reboot},
+	{"getspnam", l_getspnam},
+	{"initgroups", l_initgroups},
+	{"setgroups", l_setgroups},
 	{NULL, NULL}
 };
 

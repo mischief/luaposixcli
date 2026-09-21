@@ -41,6 +41,14 @@ f:write("through the mount"); f:close()
 assert(sys.umount(at) == 0, "umount failed")
 -- the file was on the tmpfs, so taking the tmpfs away takes it with it
 assert(stat.stat(at .. "/file") == nil, "the file outlived its filesystem")
+
+-- the flags have to reach the kernel: a read-only mount refuses a write,
+-- and a binding that dropped the argument would look like a working one
+assert(sys.mount("none", at, "tmpfs", sys.MS_RDONLY, nil) == 0, "ro mount failed")
+local ro = io.open(at .. "/file", "w")
+if ro then ro:close() end
+assert(ro == nil, "wrote to a read-only mount")
+assert(sys.umount(at) == 0)
 ' || exit 1
 
 # chroot, which moves what "/" means for the rest of the process

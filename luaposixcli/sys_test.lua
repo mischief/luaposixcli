@@ -129,6 +129,9 @@ describe("notposix", function()
 			local st = stat.stat(path)
 			assert.is_table(st)
 			assert.is_true(stat.S_ISFIFO(st.st_mode) ~= 0)
+			-- the mode carries the permission bits as well as the kind,
+			-- and a binding that dropped them would still make a fifo
+			assert.equal(tonumber("600", 8), st.st_mode & tonumber("777", 8))
 			os.remove(path)
 		end)
 

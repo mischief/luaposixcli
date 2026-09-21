@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/mount.h>
+#include <sys/reboot.h>
 #include <regex.h>
 
 #include <lua.h>
@@ -231,6 +232,22 @@ l_winsize(lua_State *L)
 	return 2;
 }
 
+/* notposix.reboot(how) -> restart, halt or power off the machine */
+static int
+l_reboot(lua_State *L)
+{
+	int how = (int)luaL_checkinteger(L, 1);
+
+	sync();
+	if (reboot(how) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
 static const luaL_Reg notposix_funcs[] = {
 	{"getpriority", l_getpriority},
 	{"setpriority", l_setpriority},
@@ -241,6 +258,7 @@ static const luaL_Reg notposix_funcs[] = {
 	{"environ", l_environ},
 	{"mount", l_mount},
 	{"umount", l_umount},
+	{"reboot", l_reboot},
 	{NULL, NULL}
 };
 
@@ -264,5 +282,28 @@ luaopen_luaposixcli_sys(lua_State *L)
 	lua_pushinteger(L, REG_ICASE);    lua_setfield(L, -2, "REG_ICASE");
 	lua_pushinteger(L, REG_NOSUB);    lua_setfield(L, -2, "REG_NOSUB");
 	lua_pushinteger(L, REG_NEWLINE);  lua_setfield(L, -2, "REG_NEWLINE");
+	/* mount flags and reboot commands, whatever this system calls them */
+#ifdef MS_RDONLY
+	lua_pushinteger(L, MS_RDONLY);   lua_setfield(L, -2, "MS_RDONLY");
+	lua_pushinteger(L, MS_NOSUID);   lua_setfield(L, -2, "MS_NOSUID");
+	lua_pushinteger(L, MS_NODEV);    lua_setfield(L, -2, "MS_NODEV");
+	lua_pushinteger(L, MS_NOEXEC);   lua_setfield(L, -2, "MS_NOEXEC");
+	lua_pushinteger(L, MS_REMOUNT);  lua_setfield(L, -2, "MS_REMOUNT");
+	lua_pushinteger(L, MS_NOATIME);  lua_setfield(L, -2, "MS_NOATIME");
+	lua_pushinteger(L, MS_BIND);     lua_setfield(L, -2, "MS_BIND");
+#endif
+#ifdef RB_AUTOBOOT
+	lua_pushinteger(L, RB_AUTOBOOT); lua_setfield(L, -2, "RB_AUTOBOOT");
+#endif
+#ifdef RB_HALT_SYSTEM
+	lua_pushinteger(L, RB_HALT_SYSTEM); lua_setfield(L, -2, "RB_HALT");
+#elif defined(RB_HALT)
+	lua_pushinteger(L, RB_HALT);     lua_setfield(L, -2, "RB_HALT");
+#endif
+#ifdef RB_POWER_OFF
+	lua_pushinteger(L, RB_POWER_OFF); lua_setfield(L, -2, "RB_POWEROFF");
+#elif defined(RB_POWEROFF)
+	lua_pushinteger(L, RB_POWEROFF); lua_setfield(L, -2, "RB_POWEROFF");
+#endif
 	return 1;
 }

@@ -58,6 +58,7 @@ foreach u : [
   'make',
   'ed',
   'stty',
+  'strings',
 ]
   subdir(u)
 endforeach

@@ -11,6 +11,7 @@
 #include <sys/mount.h>
 #include <sys/reboot.h>
 #include <grp.h>
+#include <sys/file.h>
 #include <limits.h>
 #include <pwd.h>
 #ifdef __linux__
@@ -433,6 +434,109 @@ l_chroot(lua_State *L)
 	return 1;
 }
 
+/* notposix.pivot_root(new, put_old) -- what an initramfs does to hand
+ * the machine over to the real root. No libc wrapper on Linux.
+ */
+static int
+l_pivot_root(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_pivot_root)
+	const char *new_root = luaL_checkstring(L, 1);
+	const char *put_old = luaL_checkstring(L, 2);
+
+	if (syscall(SYS_pivot_root, new_root, put_old) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "pivot_root is a Linux call");
+	return 2;
+#endif
+}
+
+/* notposix.swapon(path, flags) and swapoff(path) */
+static int
+l_swapon(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_swapon)
+	const char *path = luaL_checkstring(L, 1);
+	int flags = (int)luaL_optinteger(L, 2, 0);
+
+	if (syscall(SYS_swapon, path, flags) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "swap is a Linux call here");
+	return 2;
+#endif
+}
+
+static int
+l_swapoff(lua_State *L)
+{
+#if defined(__linux__) && defined(SYS_swapoff)
+	const char *path = luaL_checkstring(L, 1);
+
+	if (syscall(SYS_swapoff, path) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+#else
+	lua_pushnil(L);
+	lua_pushstring(L, "swap is a Linux call here");
+	return 2;
+#endif
+}
+
+/* notposix.flock(fd, operation) -- a whole-file lock, which POSIX has
+ * only as a record lock through fcntl.
+ */
+static int
+l_flock(lua_State *L)
+{
+	int fd = (int)luaL_checkinteger(L, 1);
+	int op = (int)luaL_checkinteger(L, 2);
+
+	if (flock(fd, op) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
+/* notposix.ioctl(fd, request, arg) -- the integer form, which is what
+ * the loop device and the terminal size want.
+ */
+static int
+l_ioctl(lua_State *L)
+{
+	int fd = (int)luaL_checkinteger(L, 1);
+	unsigned long request = (unsigned long)luaL_checkinteger(L, 2);
+	long value = (long)luaL_optinteger(L, 3, 0);
+
+	if (ioctl(fd, request, value) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
 static const luaL_Reg notposix_funcs[] = {
 	{"getpriority", l_getpriority},
 	{"setpriority", l_setpriority},
@@ -452,6 +556,11 @@ static const luaL_Reg notposix_funcs[] = {
 	{"delete_module", l_delete_module},
 	{"sethostname", l_sethostname},
 	{"chroot", l_chroot},
+	{"pivot_root", l_pivot_root},
+	{"swapon", l_swapon},
+	{"swapoff", l_swapoff},
+	{"flock", l_flock},
+	{"ioctl", l_ioctl},
 	{NULL, NULL}
 };
 
@@ -484,6 +593,16 @@ luaopen_luaposixcli_sys(lua_State *L)
 	lua_pushinteger(L, MS_REMOUNT);  lua_setfield(L, -2, "MS_REMOUNT");
 	lua_pushinteger(L, MS_NOATIME);  lua_setfield(L, -2, "MS_NOATIME");
 	lua_pushinteger(L, MS_BIND);     lua_setfield(L, -2, "MS_BIND");
+#endif
+	lua_pushinteger(L, LOCK_SH); lua_setfield(L, -2, "LOCK_SH");
+	lua_pushinteger(L, LOCK_EX); lua_setfield(L, -2, "LOCK_EX");
+	lua_pushinteger(L, LOCK_UN); lua_setfield(L, -2, "LOCK_UN");
+	lua_pushinteger(L, LOCK_NB); lua_setfield(L, -2, "LOCK_NB");
+#ifdef __linux__
+	/* the loop device, from linux/loop.h, which is not always installed */
+	lua_pushinteger(L, 0x4C00); lua_setfield(L, -2, "LOOP_SET_FD");
+	lua_pushinteger(L, 0x4C01); lua_setfield(L, -2, "LOOP_CLR_FD");
+	lua_pushinteger(L, 0x4C80); lua_setfield(L, -2, "LOOP_CTL_GET_FREE");
 #endif
 #ifdef RB_AUTOBOOT
 	lua_pushinteger(L, RB_AUTOBOOT); lua_setfield(L, -2, "RB_AUTOBOOT");

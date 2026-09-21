@@ -39,3 +39,9 @@ if busted.found()
     depends: luaposixcli_sys,
   )
 endif
+
+test('luaposixcli.sys.priv', sh,
+  args: [meson.current_source_dir() / 'sys_priv_test.sh'],
+  env: test_env,
+  depends: luaposixcli_sys,
+)

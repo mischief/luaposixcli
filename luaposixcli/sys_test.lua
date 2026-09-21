@@ -106,4 +106,91 @@ describe("notposix", function()
 		end)
 	end)
 
+	-- The rest of this module is the privileged corner. What a user
+	-- namespace cannot reach is in sys_priv_test.sh; what needs no
+	-- privilege at all is run here, because a binding nothing ever calls
+	-- is a binding nobody knows is wrong.
+
+	describe("device numbers", function()
+		it("splits the number a stat gives back", function()
+			local st = require("posix.sys.stat").stat("/dev/null")
+			assert.is_table(st)
+			-- /dev/null is 1:3 on every Linux
+			assert.equal(1, notposix.major(st.st_rdev))
+			assert.equal(3, notposix.minor(st.st_rdev))
+		end)
+
+		it("mknod makes a fifo, which needs no privilege", function()
+			local stat = require("posix.sys.stat")
+			local path = os.tmpname()
+			os.remove(path)
+			local ok = notposix.mknod(path, stat.S_IFIFO | tonumber("600", 8))
+			assert.equal(0, ok)
+			local st = stat.stat(path)
+			assert.is_table(st)
+			assert.is_true(stat.S_ISFIFO(st.st_mode) ~= 0)
+			os.remove(path)
+		end)
+
+		it("mknod says why when it cannot", function()
+			local stat = require("posix.sys.stat")
+			local ok, err = notposix.mknod("/proc/nothing/here",
+				stat.S_IFIFO | tonumber("600", 8))
+			assert.is_nil(ok)
+			assert.is_string(err)
+		end)
+	end)
+
+	describe("flock", function()
+		it("takes and releases an exclusive lock", function()
+			local fcntl = require("posix.fcntl")
+			local unistd = require("posix.unistd")
+			local path = os.tmpname()
+			local fd = fcntl.open(path, fcntl.O_RDWR)
+			assert.is_number(fd)
+
+			assert.equal(0, notposix.flock(fd, notposix.LOCK_EX))
+
+			-- a second descriptor on the same file cannot have it, and
+			-- LOCK_NB is what turns that into an answer rather than a wait
+			local other = fcntl.open(path, fcntl.O_RDWR)
+			local ok, err = notposix.flock(other, notposix.LOCK_EX | notposix.LOCK_NB)
+			assert.is_nil(ok)
+			assert.is_string(err)
+
+			assert.equal(0, notposix.flock(fd, notposix.LOCK_UN))
+			assert.equal(0, notposix.flock(other, notposix.LOCK_EX | notposix.LOCK_NB))
+
+			unistd.close(fd)
+			unistd.close(other)
+			os.remove(path)
+		end)
+	end)
+
+	describe("ioctl", function()
+		it("refuses a buffer size that is not one", function()
+			assert.has_error(function() notposix.ioctlbuf(0, 0, 0) end)
+			assert.has_error(function() notposix.ioctlbuf(0, 0, 1 << 20) end)
+		end)
+
+		it("gives back a buffer the same size it was handed", function()
+			-- a descriptor that is not a terminal fails, and the failure
+			-- is the reason rather than a crash
+			local ok, err = notposix.ioctlbuf(0, notposix.RTC_RD_TIME or 0x80247009, 36)
+			if ok then
+				assert.equal(36, #ok)
+			else
+				assert.is_string(err)
+			end
+		end)
+	end)
+
+	describe("shadow", function()
+		it("answers about a user nobody has", function()
+			local entry, err = notposix.getspnam("no_such_user_at_all")
+			assert.is_nil(entry)
+			assert.is_string(err)
+		end)
+	end)
+
 end)

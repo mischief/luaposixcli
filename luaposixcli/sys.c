@@ -748,6 +748,16 @@ luaopen_luaposixcli_sys(lua_State *L)
 	lua_pushinteger(L, MS_NOATIME);  lua_setfield(L, -2, "MS_NOATIME");
 	lua_pushinteger(L, MS_BIND);     lua_setfield(L, -2, "MS_BIND");
 #endif
+#ifdef MS_REC
+	/* mount propagation: what a new namespace does with the mounts it
+	 * inherited, and what pivot_root needs settled before it will run */
+	lua_pushinteger(L, MS_REC);         lua_setfield(L, -2, "MS_REC");
+	lua_pushinteger(L, MS_PRIVATE);     lua_setfield(L, -2, "MS_PRIVATE");
+	lua_pushinteger(L, MS_SHARED);      lua_setfield(L, -2, "MS_SHARED");
+	lua_pushinteger(L, MS_SLAVE);       lua_setfield(L, -2, "MS_SLAVE");
+	lua_pushinteger(L, MS_UNBINDABLE);  lua_setfield(L, -2, "MS_UNBINDABLE");
+	lua_pushinteger(L, MS_MOVE);        lua_setfield(L, -2, "MS_MOVE");
+#endif
 #ifdef __linux__
 	/* the namespace flags from sched.h, spelled out so a kernel header
 	 * that is not installed does not take unshare with it */

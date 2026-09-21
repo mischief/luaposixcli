@@ -3,6 +3,7 @@
 local lines_wanted = 10
 local bytes_wanted = nil
 local from_start = false
+local follow = false
 local files = {}
 
 local function bad(msg)
@@ -29,6 +30,8 @@ while i <= #arg do
 	elseif a:match("^%-%d+$") then
 		lines_wanted, from_start = count(a:sub(2))
 		bytes_wanted = nil
+	elseif a == "-f" or a == "-F" then
+		follow = true
 	elseif a:match("^%-[nc]") then
 		local flag = a:sub(2, 2)
 		local val = a:sub(3)
@@ -86,8 +89,30 @@ local function tail(f, name, show_header)
 	for _, line in ipairs(buf) do io.write(line) end
 end
 
+-- -f keeps reading the file after the end of it, which is how a log is
+-- watched. Several files would need one reader each; the last one wins,
+-- as it does everywhere else.
+local function follow_file(f)
+	local time = require("posix.time")
+	local at = f:seek()
+	while true do
+		local line = f:read("L")
+		if line then
+			io.write(line)
+			io.flush()
+			at = f:seek()
+		else
+			time.nanosleep({ tv_sec = 0, tv_nsec = 200000000 })
+			-- a file that was replaced or truncated is read from where
+			-- it now ends rather than from a position it no longer has
+			f:seek("set", at)
+		end
+	end
+end
+
 if #files == 0 then
 	tail(io.stdin, "", false)
+	if follow then follow_file(io.stdin) end
 else
 	for n, path in ipairs(files) do
 		local f, err
@@ -102,6 +127,7 @@ else
 		end
 		if n > 1 and #files > 1 then print("") end
 		tail(f, path, #files > 1)
+		if follow and n == #files then follow_file(f) end
 		if f ~= io.stdin then f:close() end
 	end
 end

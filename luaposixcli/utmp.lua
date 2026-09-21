@@ -56,25 +56,34 @@ function M.pack(rec)
 		rec.time or os.time(), rec.usec or 0, 0, 0, 0, 0, "")
 end
 
--- Every record in a file, oldest first. A file that is not there is not
--- an error: a machine that has never had a login has no utmp.
-function M.read(path)
+-- One record at a time, oldest first. A wtmp runs to megabytes, so
+-- nothing here holds the whole file: a caller that wants only the
+-- logins keeps only those.
+function M.each(path)
 	local f = io.open(path or M.UTMP, "rb")
-	if not f then return {} end
-	local out = {}
-	while true do
+	if not f then return function() return nil end end
+	return function()
 		local data = f:read(M.SIZE)
-		if not data or #data < M.SIZE then break end
-		out[#out + 1] = M.unpack(data)
+		if not data or #data < M.SIZE then
+			f:close()
+			return nil
+		end
+		return M.unpack(data)
 	end
-	f:close()
+end
+
+-- Every record in a file. A file that is not there is not an error: a
+-- machine that has never had a login has no utmp.
+function M.read(path)
+	local out = {}
+	for rec in M.each(path) do out[#out + 1] = rec end
 	return out
 end
 
 -- The sessions somebody is logged into right now
 function M.users(path)
 	local out = {}
-	for _, rec in ipairs(M.read(path)) do
+	for rec in M.each(path) do
 		if rec.type == M.USER_PROCESS and rec.user ~= "" then
 			out[#out + 1] = rec
 		end

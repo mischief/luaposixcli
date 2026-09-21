@@ -42,7 +42,6 @@ elseif #operands ~= 0 then
 	usage()
 end
 
-local records = utmp.read(file)
 
 -- the terminal this is being asked from, which is what -m is about
 local function my_line()
@@ -83,7 +82,7 @@ end
 
 if count then
 	local names = {}
-	for _, rec in ipairs(records) do
+	for rec in utmp.each(file) do
 		if rec.type == utmp.USER_PROCESS then names[#names + 1] = rec.user end
 	end
 	if #names > 0 then unistd.write(1, table.concat(names, " ") .. "\n") end
@@ -92,7 +91,7 @@ if count then
 end
 
 if boot then
-	for _, rec in ipairs(records) do
+	for rec in utmp.each(file) do
 		if rec.type == utmp.BOOT_TIME then
 			unistd.write(1, string.format("%-8s %-12s %s\n",
 				"", "system boot", stamp(rec.time)))
@@ -102,7 +101,7 @@ if boot then
 end
 
 if runlevel then
-	for _, rec in ipairs(records) do
+	for rec in utmp.each(file) do
 		if rec.type == utmp.RUN_LVL then
 			unistd.write(1, string.format("%-8s %-12s %s\n",
 				"run-level", string.char(rec.pid & 0xff), stamp(rec.time)))
@@ -121,7 +120,7 @@ if header then
 end
 
 local mine = me_only and my_line() or nil
-for _, rec in ipairs(records) do
+for rec in utmp.each(file) do
 	local want = dead and rec.type == utmp.DEAD_PROCESS
 		or (not dead and rec.type == utmp.USER_PROCESS)
 	if want and rec.user ~= "" then

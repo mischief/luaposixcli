@@ -29,6 +29,7 @@ foreach u : [
   'yes', 'tee', 'wc', 'head', 'tail',
   'basename', 'dirname', 'sleep', 'env', 'tty',
   'id', 'uname', 'mktemp', 'rm', 'mkdir',
+  'who', 'mesg', 'write',
   'rmdir', 'ln', 'chmod', 'kill', 'seq',
   'ls',
   'cp', 'mv', 'touch', 'time', 'nice',

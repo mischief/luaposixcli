@@ -75,8 +75,19 @@ local function ctrl(byte)
 	return string.char(byte)
 end
 
-local function report()
+-- A serial console has no window size to report, so fall back to what
+-- the environment says, the way every curses program does.
+local function winsize()
 	local rows, cols = sys.winsize(fd)
+	if not rows or rows == 0 or cols == 0 then
+		rows = tonumber(os.getenv("LINES")) or rows
+		cols = tonumber(os.getenv("COLUMNS")) or cols
+	end
+	return rows, cols
+end
+
+local function report()
+	local rows, cols = winsize()
 	if rows then
 		unistd.write(1, string.format("rows %d; columns %d;\n", rows, cols))
 	end
@@ -149,7 +160,7 @@ while n <= #args do
 		set_raw(off)
 		changed = true
 	elseif name == "size" then
-		local rows, cols = sys.winsize(fd)
+		local rows, cols = winsize()
 		if not rows then die("cannot get the window size") end
 		unistd.write(1, rows .. " " .. cols .. "\n")
 	elseif where[name] then

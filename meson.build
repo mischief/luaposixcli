@@ -59,6 +59,7 @@ foreach u : [
   'ed',
   'stty',
   'strings',
+  'tput',
 ]
   subdir(u)
 endforeach

@@ -35,7 +35,7 @@ expand.set_run_fn(nil) -- will be set after run_line is defined
 -- parse options
 local cmd_string = nil
 local login = (a[0] or ""):sub(1, 1) == "-"
-local optind = 0
+local optind = 1
 for opt, optarg, oi in unistd.getopt(a, "c:l") do
 	if opt == "c" then
 		cmd_string = optarg
@@ -44,6 +44,7 @@ for opt, optarg, oi in unistd.getopt(a, "c:l") do
 	end
 	optind = oi
 end
+if a[optind] == "--" then optind = optind + 1 end
 
 -- determine $0 and positional params
 local script_file = nil
@@ -59,10 +60,10 @@ if cmd_string then
 	env.set_argv(argv)
 else
 	-- first non-option arg is script file
-	if a[1] then
-		script_file = a[1]
-		local argv = { a[1] }
-		for i = 2, #a do
+	if a[optind] then
+		script_file = a[optind]
+		local argv = { a[optind] }
+		for i = optind + 1, #a do
 			argv[#argv + 1] = a[i]
 		end
 		env.set_argv(argv)

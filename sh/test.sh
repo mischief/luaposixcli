@@ -117,4 +117,11 @@ HOME=$TMPH $SH -l -c 'echo $PROFILE_RAN' 2>/dev/null | grep -q yes &&
 [ "$($SH -c 'echo -n a; echo b')" = "ab" ] &&
 # pipeline SIGPIPE handling
 [ "$(timeout 3 $SH -c 'yes | head -3')" = "$(printf 'y\ny\ny')" ] &&
-[ "$(timeout 3 $SH -c 'seq 1000 | head -2')" = "$(printf '1\n2')" ]
+[ "$(timeout 3 $SH -c 'seq 1000 | head -2')" = "$(printf '1\n2')" ] &&
+# a script named after the options, and -- before it
+printf 'echo script $0 $1\n' > "$TMPH/s.sh" &&
+[ "$($SH "$TMPH/s.sh" one)" = "script $TMPH/s.sh one" ] &&
+[ "$($SH -- "$TMPH/s.sh" one)" = "script $TMPH/s.sh one" ] &&
+# a login shell reads /etc/profile first, which may print anything of
+# its own, so match the script's own line
+HOME=$TMPH $SH -l "$TMPH/s.sh" one 2>/dev/null | grep -q "script $TMPH/s.sh one"

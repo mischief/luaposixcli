@@ -60,6 +60,7 @@ foreach u : [
   'stty',
   'strings',
   'tput',
+  'more',
 ]
   subdir(u)
 endforeach

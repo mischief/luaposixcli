@@ -62,6 +62,7 @@ foreach u : [
   'tput',
   'more',
   'readlink',
+  'cksum', 'split', 'nl', 'tsort', 'pathchk', 'realpath', 'timeout',
 ]
   subdir(u)
 endforeach

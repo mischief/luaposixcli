@@ -30,6 +30,21 @@ OUT=$(lua5.4 "$D/ls.lua" -l "$TMP/afile")
 echo "$OUT" | grep -q "^-" || exit 1
 echo "$OUT" | grep -q "$TMP/afile" || exit 1
 
+# -d is the directory itself, not what is in it
+[ "$(lua5.4 "$D/ls.lua" -d "$TMP")" = "$TMP" ] || exit 1
+OUT=$(lua5.4 "$D/ls.lua" -ld "$TMP")
+echo "$OUT" | grep -q "^d" || exit 1
+echo "$OUT" | grep -q "afile" && exit 1
+
+# a symlink in a long listing shows what it points at
+ln -s afile "$TMP/alink"
+lua5.4 "$D/ls.lua" -l "$TMP" | grep -q "alink -> afile" || exit 1
+lua5.4 "$D/ls.lua" -ld "$TMP/alink" | grep -q "alink -> afile" || exit 1
+rm -f "$TMP/alink"
+
+# an unknown option is refused rather than swallowed
+lua5.4 "$D/ls.lua" -Z "$TMP" 2>/dev/null && exit 1
+
 # test nonexistent
 lua5.4 "$D/ls.lua" /nonexistent_xyz 2>/dev/null
 [ $? -eq 1 ] || exit 1

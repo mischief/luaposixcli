@@ -61,6 +61,7 @@ foreach u : [
   'strings',
   'tput',
   'more',
+  'readlink',
 ]
   subdir(u)
 endforeach

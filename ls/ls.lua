@@ -11,18 +11,24 @@ local show_all = false
 local long = false
 local one_per_line = false
 local recursive = false
+local directory = false
 local paths = {}
 
 local optind = 1
-for opt, _, oi in unistd.getopt(arg, "al1R") do
+for opt, _, oi in unistd.getopt(arg, "adl1R") do
 	if opt == "a" then
 		show_all = true
+	elseif opt == "d" then
+		directory = true
 	elseif opt == "l" then
 		long = true
 	elseif opt == "1" then
 		one_per_line = true
 	elseif opt == "R" then
 		recursive = true
+	elseif opt == "?" then
+		unistd.write(2, "usage: ls [-adlR1] [file...]\n")
+		os.exit(2)
 	end
 	optind = oi
 end
@@ -61,6 +67,26 @@ local function format_time(mtime)
 	return os.date("%b %d %H:%M", mtime)
 end
 
+-- The long line. A symlink is shown with what it points at, which is the
+-- whole reason for looking at a symlink in a listing.
+local function long_line(info, path, name)
+	local pw = pwd.getpwuid(info.st_uid)
+	local gr = grp.getgrgid(info.st_gid)
+	local shown = name
+	if stat.S_ISLNK(info.st_mode) ~= 0 then
+		local to = unistd.readlink(path)
+		if to then shown = name .. " -> " .. to end
+	end
+	return string.format("%s %2d %-8s %-8s %8d %s %s",
+		mode_string(info.st_mode),
+		info.st_nlink,
+		pw and pw.pw_name or tostring(info.st_uid),
+		gr and gr.gr_name or tostring(info.st_gid),
+		info.st_size,
+		format_time(info.st_mtime),
+		shown)
+end
+
 local function list_dir(path, show_header)
 	local entries = dirent.dir(path)
 	if not entries then
@@ -81,18 +107,7 @@ local function list_dir(path, show_header)
 			if long then
 				local s = stat.lstat(full)
 				if s then
-					local pw = pwd.getpwuid(s.st_uid)
-					local gr = grp.getgrgid(s.st_gid)
-					output[#output + 1] = string.format(
-						"%s %2d %-8s %-8s %8d %s %s",
-						mode_string(s.st_mode),
-						s.st_nlink,
-						pw and pw.pw_name or tostring(s.st_uid),
-						gr and gr.gr_name or tostring(s.st_gid),
-						s.st_size,
-						format_time(s.st_mtime),
-						name
-					)
+					output[#output + 1] = long_line(s, full, name)
 				end
 			else
 				output[#output + 1] = name
@@ -143,25 +158,12 @@ for _, path in ipairs(paths) do
 		os.exit(1)
 	end
 
-	if stat.S_ISDIR(s.st_mode) == 0 then
-		-- Not a directory: show the file (use lstat for display)
+	-- -d is the directory itself rather than what is in it, which is how
+	-- a script asks whether something is there and what it is
+	if directory or stat.S_ISDIR(s.st_mode) == 0 then
 		local info = ls or s
 		if long then
-			local pw = pwd.getpwuid(info.st_uid)
-			local gr = grp.getgrgid(info.st_gid)
-			unistd.write(
-				1,
-				string.format(
-					"%s %2d %-8s %-8s %8d %s %s\n",
-					mode_string(info.st_mode),
-					info.st_nlink,
-					pw and pw.pw_name or tostring(info.st_uid),
-					gr and gr.gr_name or tostring(info.st_gid),
-					info.st_size,
-					format_time(info.st_mtime),
-					path
-				)
-			)
+			unistd.write(1, long_line(info, path, path) .. "\n")
 		else
 			unistd.write(1, path .. "\n")
 		end

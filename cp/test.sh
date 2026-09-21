@@ -18,6 +18,11 @@ $CP tree nope 2>/dev/null && exit 1
 # several into a directory
 mkdir into && $CP tree/a tree/sub/b into || exit 1
 [ -f into/a ] && [ -f into/b ] || exit 1
+# the mode comes across without -p, which is what makes a copied program
+# still a program
+chmod 755 tree/a && $CP tree/a prog && [ -x prog ] || exit 1
+[ "$(stat -c%a prog)" = "$(cp tree/a sysprog && stat -c%a sysprog)" ] || exit 1
+$CP -R tree copied && [ "$(stat -c%a copied/a)" = "755" ] || exit 1
 # -p keeps the mode
 chmod 700 tree/a && $CP -p tree/a kept || exit 1
 [ "$(stat -c%a kept)" = "700" ] || exit 1

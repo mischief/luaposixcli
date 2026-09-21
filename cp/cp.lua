@@ -84,7 +84,10 @@ local function copy_file(source, dest, st)
 	if not may_overwrite(dest) then return end
 	local fd_in, err = fcntl.open(source, fcntl.O_RDONLY)
 	if not fd_in then return warn(err or (source .. ": cannot read")) end
-	local mode = preserve and (st.st_mode & tonumber("7777", 8)) or tonumber("666", 8)
+	-- POSIX: the destination takes the source's permission bits, and the
+	-- umask trims them unless -p says to keep them exactly. Opening with
+	-- 666 instead is what loses the execute bit on every copied program.
+	local mode = st.st_mode & tonumber("7777", 8)
 	local fd_out, werr = fcntl.open(dest,
 		fcntl.O_WRONLY | fcntl.O_CREAT | fcntl.O_TRUNC, mode)
 	if not fd_out then

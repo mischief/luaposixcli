@@ -22,6 +22,15 @@ function M.die(msg, status)
 	os.exit(status or 1)
 end
 
+-- The operands after getopt. getopt stops at the first operand and
+-- leaves a "--" in place, so drop that one here.
+function M.operands(argv, optind)
+	local out = {}
+	if argv[optind] == "--" then optind = optind + 1 end
+	for i = optind, #argv do out[#out + 1] = argv[i] end
+	return out
+end
+
 -- Everything left on a descriptor. Returns nil and the reason on a read
 -- error, which is not the same as end of file.
 function M.slurp_fd(fd)

@@ -21,6 +21,7 @@
 #include <sys/syscall.h>
 #endif
 #include <regex.h>
+#include <time.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -458,6 +459,69 @@ l_minor(lua_State *L)
 	return 1;
 }
 
+/* notposix.ioctlbuf(fd, request, size or string) -> string or nil, errmsg
+ * The requests that pass a struct rather than a number. A number asks
+ * for a buffer of that many zero bytes; a string is passed as it is.
+ * What comes back is the buffer as the kernel left it.
+ */
+static int
+l_ioctlbuf(lua_State *L)
+{
+	int fd = (int)luaL_checkinteger(L, 1);
+	unsigned long request = (unsigned long)luaL_checkinteger(L, 2);
+	size_t len = 0;
+	const char *in = NULL;
+	char *buf;
+	int rc;
+
+	if (lua_isnumber(L, 3)) {
+		len = (size_t)lua_tointeger(L, 3);
+	} else {
+		in = luaL_checklstring(L, 3, &len);
+	}
+	if (len == 0 || len > 65536)
+		return luaL_error(L, "ioctlbuf: bad buffer size");
+
+	buf = calloc(1, len);
+	if (buf == NULL)
+		return luaL_error(L, "ioctlbuf: out of memory");
+	if (in != NULL)
+		memcpy(buf, in, len);
+
+	rc = ioctl(fd, request, buf);
+	if (rc == -1) {
+		int saved = errno;
+		free(buf);
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(saved));
+		return 2;
+	}
+	lua_pushlstring(L, buf, len);
+	free(buf);
+	return 1;
+}
+
+/* notposix.settime(seconds[, nanoseconds]) -- set the system clock.
+ * POSIX has clock_settime but luaposix binds only the reading half, and
+ * setting it is privileged either way.
+ */
+static int
+l_settime(lua_State *L)
+{
+	struct timespec ts;
+
+	ts.tv_sec = (time_t)luaL_checkinteger(L, 1);
+	ts.tv_nsec = (long)luaL_optinteger(L, 2, 0);
+
+	if (clock_settime(CLOCK_REALTIME, &ts) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
+}
+
 /* notposix.chroot(path) */
 static int
 l_chroot(lua_State *L)
@@ -642,6 +706,8 @@ static const luaL_Reg notposix_funcs[] = {
 	{"mknod", l_mknod},
 	{"major", l_major},
 	{"minor", l_minor},
+	{"ioctlbuf", l_ioctlbuf},
+	{"settime", l_settime},
 	{"pivot_root", l_pivot_root},
 	{"swapon", l_swapon},
 	{"swapoff", l_swapoff},
@@ -697,6 +763,12 @@ luaopen_luaposixcli_sys(lua_State *L)
 	lua_pushinteger(L, LOCK_EX); lua_setfield(L, -2, "LOCK_EX");
 	lua_pushinteger(L, LOCK_UN); lua_setfield(L, -2, "LOCK_UN");
 	lua_pushinteger(L, LOCK_NB); lua_setfield(L, -2, "LOCK_NB");
+#ifdef __linux__
+	/* the real time clock, from linux/rtc.h: read and set the nine
+	 * ints of a struct rtc_time */
+	lua_pushinteger(L, 0x80247009); lua_setfield(L, -2, "RTC_RD_TIME");
+	lua_pushinteger(L, 0x4024700a); lua_setfield(L, -2, "RTC_SET_TIME");
+#endif
 #ifdef __linux__
 	/* the loop device, from linux/loop.h, which is not always installed */
 	lua_pushinteger(L, 0x4C00); lua_setfield(L, -2, "LOOP_SET_FD");

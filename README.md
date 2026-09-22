@@ -10,6 +10,20 @@ ninja -C build
 meson test -C build
 ```
 
+The two C extensions build with any compiler the build system will
+accept. meson identifies a compiler by matching its `--version` output,
+so it refuses one it has never heard of; [tau](https://git.offblast.org/mischief/tau)
+reads the same `meson.build` and probes instead. With
+[kunai](https://git.offblast.org/mischief/kunai) and
+[mcc](https://git.offblast.org/mischief/mcc), nothing between the
+source and the shared objects is written in anything but Lua:
+
+```
+CC=mcc tau setup build-mcc
+kunai -C build-mcc
+tau test -C build-mcc
+```
+
 ## Quick Start
 
 ```

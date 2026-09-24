@@ -126,7 +126,7 @@ local function list_dir(path, show_header)
 		unistd.write(1, table.concat(output, "\n") .. "\n")
 	else
 		-- Terminal: columnated output
-		local cols = notposix.winsize(1) or 80
+		local cols = select(2, notposix.winsize(1)) or 80
 		local maxw = 0
 		for _, name in ipairs(output) do
 			if #name > maxw then maxw = #name end

@@ -61,6 +61,7 @@ foreach u : [
   'stty',
   'strings',
   'tput',
+  'resize',
   'more',
   'readlink',
   'cksum', 'split', 'nl', 'tsort', 'pathchk', 'realpath', 'timeout',

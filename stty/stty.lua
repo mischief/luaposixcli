@@ -163,6 +163,14 @@ while n <= #args do
 		local rows, cols = winsize()
 		if not rows then die("cannot get the window size") end
 		unistd.write(1, rows .. " " .. cols .. "\n")
+	elseif name == "rows" or name == "columns" or name == "cols" then
+		n = n + 1
+		local value = tonumber(args[n]) or die(name .. " needs a number")
+		local rows, cols = winsize()
+		rows, cols = rows or 0, cols or 0
+		if name == "rows" then rows = value else cols = value end
+		local ok, err = sys.setwinsize(fd, rows, cols)
+		if not ok then die("cannot set the window size: " .. tostring(err)) end
 	elseif where[name] then
 		local slot = where[name]
 		if off then

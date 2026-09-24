@@ -13,4 +13,7 @@ script -qec "$STTY" /dev/null < /dev/null | grep -q "intr = " || exit 1
 script -qec "$STTY size" /dev/null < /dev/null | grep -qE '^[0-9]+ [0-9]+' || exit 1
 # raw takes and cooked puts back
 script -qec "$STTY raw; $STTY -a | grep -q -- -icanon && $STTY cooked && $STTY -a | grep -q 'icanon'" /dev/null < /dev/null || exit 1
+# rows and columns set the size the kernel holds, which is what a serial
+# console has none of
+script -qec "$STTY rows 40; $STTY cols 100; $STTY size" /dev/null < /dev/null | grep -q "^40 100" || exit 1
 exit 0

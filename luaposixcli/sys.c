@@ -227,7 +227,11 @@ l_setpgid(lua_State *L)
 	return 1;
 }
 
-/* notposix.winsize([fd]) -> cols, rows or nil, errmsg */
+/* notposix.winsize([fd]) -> rows, cols or nil, errmsg
+ *
+ * Same order as struct winsize and as setwinsize, which is what every
+ * caller writes when it names the two.
+ */
 static int
 l_winsize(lua_State *L)
 {
@@ -238,9 +242,32 @@ l_winsize(lua_State *L)
 		lua_pushstring(L, strerror(errno));
 		return 2;
 	}
-	lua_pushinteger(L, ws.ws_col);
 	lua_pushinteger(L, ws.ws_row);
+	lua_pushinteger(L, ws.ws_col);
 	return 2;
+}
+
+/* notposix.setwinsize(fd, rows, cols) -> 0 or nil, errmsg
+ *
+ * A serial line carries no size, so the kernel holds 0x0 until something
+ * says otherwise. Every process on that terminal gets SIGWINCH.
+ */
+static int
+l_setwinsize(lua_State *L)
+{
+	int fd = (int)luaL_checkinteger(L, 1);
+	struct winsize ws;
+
+	memset(&ws, 0, sizeof ws);
+	ws.ws_row = (unsigned short)luaL_checkinteger(L, 2);
+	ws.ws_col = (unsigned short)luaL_checkinteger(L, 3);
+	if (ioctl(fd, TIOCSWINSZ, &ws) == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		return 2;
+	}
+	lua_pushinteger(L, 0);
+	return 1;
 }
 
 /* notposix.reboot(how) -> restart, halt or power off the machine */
@@ -689,6 +716,7 @@ static const luaL_Reg notposix_funcs[] = {
 	{"setpriority", l_setpriority},
 	{"setpgid", l_setpgid},
 	{"winsize", l_winsize},
+	{"setwinsize", l_setwinsize},
 	{"regcomp", l_regcomp},
 	{"regmatch", l_regmatch},
 	{"environ", l_environ},

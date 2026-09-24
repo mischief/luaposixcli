@@ -49,7 +49,9 @@ local function ask()
 	local raw = termio.tcgetattr(fd)
 	raw.lflag = raw.lflag & ~(termio.ICANON | termio.ECHO)
 	raw.cc[termio.VMIN] = 0
-	raw.cc[termio.VTIME] = 5
+	-- tenths of a second between bytes. A serial console is slow and
+	-- the answer comes a byte at a time.
+	raw.cc[termio.VTIME] = 20
 	termio.tcsetattr(fd, termio.TCSANOW, raw)
 
 	unistd.write(fd, "\27[s\27[999;999H\27[6n")

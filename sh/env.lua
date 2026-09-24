@@ -156,7 +156,7 @@ function M.export_to_process()
 	for name in pairs(exported) do
 		local value = vars[name]
 		if value == nil then
-			stdlib.unsetenv(name)
+			stdlib.setenv(name, nil)
 		else
 			stdlib.setenv(name, value, true)
 		end

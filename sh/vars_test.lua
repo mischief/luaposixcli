@@ -353,3 +353,29 @@ describe("sh.expand", function()
 		end)
 	end)
 end)
+
+-- The exported set and the process environment are two things, and a
+-- name can be in the first with no value: `export FOO` before any
+-- assignment. Putting that into the environment means removing it.
+describe("exported names with no value", function()
+	local function sh(input)
+		local src = debug.getinfo(1, "S").source:match("^@(.+/)") or "./"
+		local cmd = string.format("lua5.4 %ssh.lua -c '%s' 2>&1", src, input)
+		local f = io.popen(cmd)
+		local out = f:read("*a"):gsub("\n$", "")
+		f:close()
+		return out
+	end
+
+	it("does not fail when a child is started", function()
+		assert.equal("ok", sh("export NOPE; true; echo ok"))
+	end)
+
+	it("keeps such a name out of the child's environment", function()
+		assert.equal("", sh("export NOPE; env | grep ^NOPE="))
+	end)
+
+	it("takes back a name the environment had", function()
+		assert.equal("", sh("export NOPE=1; unset NOPE; env | grep ^NOPE="))
+	end)
+end)

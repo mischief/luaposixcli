@@ -124,6 +124,10 @@ function M.export(name)
 	exported[name] = true
 end
 
+function M.unexport(name)
+	exported[name] = nil
+end
+
 function M.is_exported(name)
 	return exported[name] == true
 end

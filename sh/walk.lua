@@ -684,6 +684,15 @@ builtins = {
 	end,
 }
 
+-- The special built-ins. A prefix assignment before one of these stays
+-- in the shell afterwards, which is what marks them out here.
+local special_builtin = {
+	[":"] = true, ["."] = true, ["break"] = true, continue = true,
+	eval = true, exec = true, exit = true, export = true,
+	readonly = true, ["return"] = true, set = true, shift = true,
+	times = true, trap = true, unset = true,
+}
+
 -- Execute a simple command (expand words, handle builtins, fork+exec)
 local function exec_simple(node)
 	-- Process assignments
@@ -740,18 +749,31 @@ local function exec_simple(node)
 
 	-- Check for builtins
 	if builtins[args[1]] then
-		-- prefix assignments are temporary for regular builtins
-		local saved_vals = {}
+		-- A prefix assignment reaches the command's environment, so it
+		-- is exported while the builtin runs, and exec carries it into
+		-- the program that replaces this shell. After a special builtin
+		-- it stays. The old values are a list because an unset name has
+		-- no value to keep in a table.
+		local prefix = {}
 		for _, a in ipairs(assigns) do
 			local name, val = expand.parse_assignment(a)
-			saved_vals[name] = env.get(name)
+			prefix[#prefix + 1] = {
+				name = name,
+				value = env.get(name),
+				exported = env.is_exported(name),
+			}
 			env.set(name, expand.word(val))
+			env.export(name)
 		end
 		local saved = apply_redirections(node.redirs, node.heredoc_bodies)
 		local status = builtins[args[1]](args)
 		restore_redirections(saved)
-		for name, oldval in pairs(saved_vals) do
-			if oldval == nil then env.unset(name) else env.set(name, oldval) end
+		if not special_builtin[args[1]] then
+			for _, p in ipairs(prefix) do
+				if p.value == nil then env.unset(p.name)
+				else env.set(p.name, p.value) end
+				if not p.exported then env.unexport(p.name) end
+			end
 		end
 		return status
 	end

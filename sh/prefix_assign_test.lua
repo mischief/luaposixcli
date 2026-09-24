@@ -38,3 +38,25 @@ describe("prefix variable assignments", function()
 		assert.equal("42", sh("MYVAR=42; echo $MYVAR"))
 	end)
 end)
+
+describe("prefix assignments and builtins", function()
+	it("reaches the program exec replaces the shell with", function()
+		assert.equal("x", sh("V=x exec env | grep ^V= | sed s/V=//"))
+	end)
+
+	it("does not persist after a regular builtin", function()
+		assert.equal("[]", sh("V=x true; echo \"[$V]\""))
+	end)
+
+	it("persists after a special builtin", function()
+		assert.equal("[x]", sh("V=x : ; echo \"[$V]\""))
+	end)
+
+	it("puts back what a regular builtin's assignment covered", function()
+		assert.equal("[old]", sh("V=old; V=new true; echo \"[$V]\""))
+	end)
+
+	it("leaves a covered name unexported", function()
+		assert.equal("", sh("V=x true; env | grep ^V="))
+	end)
+end)

@@ -144,9 +144,115 @@ if interactive then
 	if envfile then source_if_readable(expand.word(envfile)) end
 end
 
+-- One text, whether it came from -c, a script or a dot file. The
+-- here-document bodies are the lines after the command, so the text
+-- has to be read as lines rather than handed to the parser whole.
+local function run_text(content)
+local pending = ""
+
+-- check if a string has balanced quotes
+local function quotes_balanced(s)
+	local i = 1
+	while i <= #s do
+		local c = s:sub(i, i)
+		if c == "\\" then
+			i = i + 2
+		elseif c == "'" then
+			local j = s:find("'", i + 1, true)
+			if not j then return false end
+			i = j + 1
+		elseif c == '"' then
+			local e = lexer.skip_dquote(s, i + 1)
+			if not e then return false end
+			i = e
+		elseif c == "$" and s:sub(i + 1, i + 1) == "(" then
+			local e = lexer.skip_cmdsub(s, i + 1)
+			if not e then return false end
+			i = e
+		else
+			i = i + 1
+		end
+	end
+	return true
+end
+
+-- Split content into lines for indexed access. Blank lines are kept:
+-- a here-document body may contain them.
+local lines = {}
+do
+	local text = content
+	if text:sub(-1) ~= "\n" then text = text .. "\n" end
+	for l in text:gmatch("([^\n]*)\n") do lines[#lines + 1] = l end
+end
+
+-- Extract here-doc delimiters from a flat token list
+local function get_heredoc_delims(flat)
+	local delims = {}
+	for i = 1, #flat do
+		if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
+			local strip = (flat[i] == "<<-")
+			local delim = flat[i + 1]
+			-- A quoted delimiter means the body is literal
+			local quoted = false
+			if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
+				quoted = true
+				delim = delim:sub(2, -2)
+			end
+			delims[#delims + 1] = { delim = delim, strip = strip, quoted = quoted }
+		end
+	end
+	return delims
+end
+
+-- A body starts on the line after the one that names it, whether or
+-- not the command is finished: the lines inside a loop belong to the
+-- here-document, not to the loop.
+local function takebody(lines, li, hd)
+	local body = {}
+	while li <= #lines do
+		local hl = lines[li]
+		li = li + 1
+		if hd.strip then hl = hl:gsub("^\t+", "") end
+		if hl == hd.delim then break end
+		body[#body + 1] = hl .. "\n"
+	end
+	return table.concat(body), li
+end
+
+local li = 1
+local bodies = {}
+while li <= #lines do
+	local line = lines[li]
+	li = li + 1
+	if line:sub(-1) == "\\" then
+		pending = pending .. line:sub(1, -2)
+	else
+		pending = pending .. (pending ~= "" and "\n" or "") .. line
+		if quotes_balanced(pending) then
+			local this = lexer.tokenize_flat(line)
+			for _, hd in ipairs(this and get_heredoc_delims(this) or {}) do
+				local body
+				body, li = takebody(lines, li, hd)
+				bodies[#bodies + 1] = body
+			end
+			local flat = lexer.tokenize_flat(pending)
+			if (flat and parse.is_complete(flat)) or not flat then
+				if pending ~= "" then
+					run_line(pending, #bodies > 0 and bodies or nil)
+				end
+				pending, bodies = "", {}
+			end
+		end
+	end
+end
+if pending ~= "" then
+	run_line(pending, #bodies > 0 and bodies or nil)
+end
+end
+
 -- -c mode: run command string and exit
 if cmd_string then
-	run_line(cmd_string)
+	run_text(cmd_string)
 	env.run_exit_trap()
 	os.exit(tonumber(env.get("?")) or 0)
 end
@@ -167,103 +273,7 @@ if script_file then
 		content = content .. chunk
 	end
 	unistd.close(fd)
-	local pending = ""
-
-	-- check if a string has balanced quotes
-	local function quotes_balanced(s)
-		local i = 1
-		while i <= #s do
-			local c = s:sub(i, i)
-			if c == "\\" then
-				i = i + 2
-			elseif c == "'" then
-				local j = s:find("'", i + 1, true)
-				if not j then return false end
-				i = j + 1
-			elseif c == '"' then
-				local e = lexer.skip_dquote(s, i + 1)
-				if not e then return false end
-				i = e
-			elseif c == "$" and s:sub(i + 1, i + 1) == "(" then
-				local e = lexer.skip_cmdsub(s, i + 1)
-				if not e then return false end
-				i = e
-			else
-				i = i + 1
-			end
-		end
-		return true
-	end
-
-	-- Split content into lines for indexed access. Blank lines are kept:
-	-- a here-document body may contain them.
-	local lines = {}
-	do
-		local text = content
-		if text:sub(-1) ~= "\n" then text = text .. "\n" end
-		for l in text:gmatch("([^\n]*)\n") do lines[#lines + 1] = l end
-	end
-
-	-- Extract here-doc delimiters from a flat token list
-	local function get_heredoc_delims(flat)
-		local delims = {}
-		for i = 1, #flat do
-			if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
-				local strip = (flat[i] == "<<-")
-				local delim = flat[i + 1]
-				-- A quoted delimiter means the body is literal
-				local quoted = false
-				if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
-					quoted = true
-					delim = delim:sub(2, -2)
-				end
-				delims[#delims + 1] = { delim = delim, strip = strip, quoted = quoted }
-			end
-		end
-		return delims
-	end
-
-	local li = 1
-	while li <= #lines do
-		local line = lines[li]
-		li = li + 1
-		if line:sub(-1) == "\\" then
-			pending = pending .. line:sub(1, -2)
-		else
-			pending = pending .. (pending ~= "" and "\n" or "") .. line
-			if not quotes_balanced(pending) then
-				-- incomplete
-			else
-				local flat = lexer.tokenize_flat(pending)
-				if flat and parse.is_complete(flat) then
-					-- Collect here-doc bodies
-					local delims = get_heredoc_delims(flat)
-					local bodies = {}
-					for _, hd in ipairs(delims) do
-						local body = {}
-						while li <= #lines do
-							local hl = lines[li]
-							li = li + 1
-							if hd.strip then hl = hl:gsub("^\t+", "") end
-							if hl == hd.delim then break end
-							body[#body + 1] = hl .. "\n"
-						end
-						bodies[#bodies + 1] = table.concat(body)
-					end
-					if pending ~= "" then
-						run_line(pending, #bodies > 0 and bodies or nil)
-					end
-					pending = ""
-				elseif not flat then
-					if pending ~= "" then run_line(pending) end
-					pending = ""
-				end
-			end
-		end
-	end
-	if pending ~= "" then
-		run_line(pending)
-	end
+	run_text(content)
 	env.run_exit_trap()
 	os.exit(tonumber(env.get("?")) or 0)
 end
@@ -555,6 +565,35 @@ while true do
 		end
 		line = line .. cont
 	end
+	-- A here-document body is read as soon as the line naming it is in,
+	-- because the lines that follow belong to the body and not to the
+	-- compound command still being typed.
+	local heredoc_bodies
+	local function takebodies(text)
+		local flat = lexer.tokenize_flat(text)
+		if not flat then return end
+		for i = 1, #flat do
+			if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
+				local strip = (flat[i] == "<<-")
+				local delim = flat[i + 1]
+				if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
+					delim = delim:sub(2, -2)
+				end
+				local body = {}
+				while true do
+					local hl = read_line()
+					if not hl then break end
+					if strip then hl = hl:gsub("^\t+", "") end
+					if hl == delim then break end
+					body[#body + 1] = hl .. "\n"
+				end
+				heredoc_bodies = heredoc_bodies or {}
+				heredoc_bodies[#heredoc_bodies + 1] = table.concat(body)
+			end
+		end
+	end
+
+	takebodies(line)
 	-- accumulate lines for incomplete compound commands
 	while true do
 		local flat = lexer.tokenize_flat(line)
@@ -573,38 +612,7 @@ while true do
 			break
 		end
 		line = line .. "\n" .. cont
-	end
-	-- Collect here-doc bodies if needed
-	local flat = lexer.tokenize_flat(line)
-	local heredoc_bodies
-	if flat then
-		local delims = {}
-		for i = 1, #flat do
-			if (flat[i] == "<<" or flat[i] == "<<-") and flat[i + 1] then
-				local strip = (flat[i] == "<<-")
-				local delim = flat[i + 1]
-				local quoted = false
-				if delim:sub(1, 1) == "'" or delim:sub(1, 1) == '"' then
-					quoted = true
-					delim = delim:sub(2, -2)
-				end
-				delims[#delims + 1] = { delim = delim, strip = strip, quoted = quoted }
-			end
-		end
-		if #delims > 0 then
-			heredoc_bodies = {}
-			for _, hd in ipairs(delims) do
-				local body = {}
-				while true do
-					local hl = read_line()
-					if not hl then break end
-					if hd.strip then hl = hl:gsub("^\t+", "") end
-					if hl == hd.delim then break end
-					body[#body + 1] = hl .. "\n"
-				end
-				heredoc_bodies[#heredoc_bodies + 1] = table.concat(body)
-			end
-		end
+		takebodies(cont)
 	end
 	run_line(line, heredoc_bodies)
 	sigint_received = false

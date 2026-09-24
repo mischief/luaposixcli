@@ -23,6 +23,7 @@ if busted.found()
   test('sh.vars', busted,
     args: ['--lua=' + lua_name, meson.current_source_dir() / 'vars_test.lua'],
     workdir: meson.project_source_root(),
+    env: sh_test_env,
   )
 
   test('sh.test', busted,

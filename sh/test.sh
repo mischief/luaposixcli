@@ -118,6 +118,15 @@ HOME=$TMPH $SH -l -c 'echo $PROFILE_RAN' 2>/dev/null | grep -q yes &&
 # pipeline SIGPIPE handling
 [ "$(timeout 3 $SH -c 'yes | head -3')" = "$(printf 'y\ny\ny')" ] &&
 [ "$(timeout 3 $SH -c 'seq 1000 | head -2')" = "$(printf '1\n2')" ] &&
+# here-documents: the body is the lines after the one that names it,
+# wherever the command came from and whether or not it is finished
+[ "$($SH -c "$(printf 'cat <<EOF\nfrom -c\nEOF\n')")" = "from -c" ] &&
+[ "$($SH -c "$(printf 'cat <<EOF\nbody\nEOF\necho after\n')")" = "$(printf 'body\nafter')" ] &&
+[ "$($SH -c "$(printf 'for i in 1 2; do\ncat <<EOF\nline $i\nEOF\ndone\n')")" = "$(printf 'line 1\nline 2')" ] &&
+[ "$(printf 'for i in 1 2; do\ncat <<EOF\nline $i\nEOF\ndone\n' | $SH)" = "$(printf 'line 1\nline 2')" ] &&
+[ "$($SH -c "$(printf 'if true; then\ncat <<EOF\ninside\nEOF\nfi\n')")" = "inside" ] &&
+[ "$($SH -c "$(printf 'cat <<A; cat <<B\none\nA\ntwo\nB\n')")" = "$(printf 'one\ntwo')" ] &&
+[ "$($SH -c "$(printf 'cat <<EOF | tr a-z A-Z\nshout\nEOF\n')")" = "SHOUT" ] &&
 # a script named after the options, and -- before it
 printf 'echo script $0 $1\n' > "$TMPH/s.sh" &&
 [ "$($SH "$TMPH/s.sh" one)" = "script $TMPH/s.sh one" ] &&

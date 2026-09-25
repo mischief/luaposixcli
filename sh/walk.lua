@@ -281,8 +281,8 @@ builtins = {
 	["eval"] = function(args)
 		local s = table.concat(args, " ", 2)
 		if s ~= "" then
-			local run_fn = require("sh.expand").get_run_fn and require("sh.expand").get_run_fn()
-			if run_fn then run_fn(s) end
+			local text_fn = require("sh.expand").get_text_fn()
+			if text_fn then text_fn(s) end
 		end
 		return tonumber(env.get("?")) or 0
 	end,
@@ -331,12 +331,10 @@ builtins = {
 		end
 		unistd.close(fd)
 		local content = table.concat(chunks)
-		local run_fn = require("sh.expand").get_run_fn and require("sh.expand").get_run_fn()
-		if run_fn then
-			for line in content:gmatch("([^\n]+)") do
-				run_fn(line)
-			end
-		end
+		-- The file is one script, not a list of lines: a compound command
+		-- and a here-document body both carry over several lines.
+		local text_fn = require("sh.expand").get_text_fn()
+		if text_fn then text_fn(content) end
 		return tonumber(env.get("?")) or 0
 	end,
 	["command"] = function(args)

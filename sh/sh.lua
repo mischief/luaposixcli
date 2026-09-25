@@ -134,16 +134,6 @@ local function source_if_readable(path)
 	end
 end
 
-if login then
-	source_if_readable("/etc/profile")
-	local home = env.get("HOME")
-	if home and home ~= "" then source_if_readable(home .. "/.profile") end
-end
-if interactive then
-	local envfile = env.get("ENV")
-	if envfile then source_if_readable(expand.word(envfile)) end
-end
-
 -- One text, whether it came from -c, a script or a dot file. The
 -- here-document bodies are the lines after the command, so the text
 -- has to be read as lines rather than handed to the parser whole.
@@ -250,6 +240,19 @@ if pending ~= "" then
 	run_line(pending, #bodies > 0 and bodies or nil)
 end
 end
+
+expand.set_text_fn(run_text)
+
+if login then
+	source_if_readable("/etc/profile")
+	local home = env.get("HOME")
+	if home and home ~= "" then source_if_readable(home .. "/.profile") end
+end
+if interactive then
+	local envfile = env.get("ENV")
+	if envfile then source_if_readable(expand.word(envfile)) end
+end
+
 
 -- -c mode: run command string and exit
 if cmd_string then

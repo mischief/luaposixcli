@@ -138,4 +138,13 @@ printf 'echo script $0 $1\n' > "$TMPH/s.sh" &&
 [ "$($SH -- "$TMPH/s.sh" one)" = "script $TMPH/s.sh one" ] &&
 # a login shell reads /etc/profile first, which may print anything of
 # its own, so match the script's own line
-HOME=$TMPH $SH -l "$TMPH/s.sh" one 2>/dev/null | grep -q "script $TMPH/s.sh one"
+HOME=$TMPH $SH -l "$TMPH/s.sh" one 2>/dev/null | grep -q "script $TMPH/s.sh one" &&
+# a dot file is one script, not a list of lines: a compound command and
+# a here-document body both carry over several lines
+printf 'if false; then\necho NO1\nfi\nif false; then\necho NO2\nfi\necho DOT-END\n' > "$TMPH/d.sh" &&
+[ "$($SH -c ". $TMPH/d.sh")" = "DOT-END" ] &&
+[ "$($SH -c ". $TMPH/d.sh; echo rc=$?")" = "$(printf 'DOT-END\nrc=0')" ] &&
+printf 'for i in 1 2; do\ncat <<EOF\ndot $i\nEOF\ndone\n' > "$TMPH/h.sh" &&
+[ "$($SH -c ". $TMPH/h.sh")" = "$(printf 'dot 1\ndot 2')" ] &&
+# eval sees a whole script too
+[ "$($SH -c "$(printf 'eval "if false; then\necho NOEV\nfi\necho EV-END"')")" = "EV-END" ]

@@ -42,6 +42,14 @@ local function set_run_fn(fn)
 	run_fn = fn
 end
 
+-- callback to execute a whole script text, which can hold compound
+-- commands that span lines. set by sh.lua at startup.
+local text_fn = nil
+
+local function set_text_fn(fn)
+	text_fn = fn
+end
+
 local function cmdsub(cmd)
 	local r, w = unistd.pipe()
 	local pid = unistd.fork()
@@ -826,4 +834,6 @@ return {
 	set_sh_path = set_sh_path,
 	set_run_fn = set_run_fn,
 	get_run_fn = function() return run_fn end,
+	set_text_fn = set_text_fn,
+	get_text_fn = function() return text_fn end,
 }

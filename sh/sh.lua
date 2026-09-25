@@ -147,10 +147,8 @@ end
 -- One text, whether it came from -c, a script or a dot file. The
 -- here-document bodies are the lines after the command, so the text
 -- has to be read as lines rather than handed to the parser whole.
-local function run_text(content)
-local pending = ""
-
--- check if a string has balanced quotes
+-- A quote left open at the end of a line is a line that is not finished,
+-- wherever it came from.
 local function quotes_balanced(s)
 	local i = 1
 	while i <= #s do
@@ -175,6 +173,9 @@ local function quotes_balanced(s)
 	end
 	return true
 end
+
+local function run_text(content)
+local pending = ""
 
 -- Split content into lines for indexed access. Blank lines are kept:
 -- a here-document body may contain them.
@@ -593,6 +594,19 @@ while true do
 		end
 	end
 
+	local function readclosed(text)
+		while text and not quotes_balanced(text) do
+			if interactive then
+				unistd.write(2, "> ")
+			end
+			local more = read_line()
+			if not more then break end
+			text = text .. "\n" .. more
+		end
+		return text
+	end
+
+	line = readclosed(line)
 	takebodies(line)
 	-- accumulate lines for incomplete compound commands
 	while true do
@@ -607,7 +621,7 @@ while true do
 		if interactive then
 			unistd.write(2, "> ")
 		end
-		local cont = read_line()
+		local cont = readclosed(read_line())
 		if not cont then
 			break
 		end

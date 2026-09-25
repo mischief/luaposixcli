@@ -127,6 +127,11 @@ HOME=$TMPH $SH -l -c 'echo $PROFILE_RAN' 2>/dev/null | grep -q yes &&
 [ "$($SH -c "$(printf 'if true; then\ncat <<EOF\ninside\nEOF\nfi\n')")" = "inside" ] &&
 [ "$($SH -c "$(printf 'cat <<A; cat <<B\none\nA\ntwo\nB\n')")" = "$(printf 'one\ntwo')" ] &&
 [ "$($SH -c "$(printf 'cat <<EOF | tr a-z A-Z\nshout\nEOF\n')")" = "SHOUT" ] &&
+# a quote left open at the end of a line keeps the reader waiting,
+# from a terminal as well as from a file
+[ "$(printf "echo 'one\ntwo'\n" | $SH)" = "$(printf 'one\ntwo')" ] &&
+[ "$(printf 'echo \"a\nb\"\n' | $SH)" = "$(printf 'a\nb')" ] &&
+[ "$(printf "x='a\nb'\ncat <<EOF\nvalue \$x\nEOF\n" | $SH)" = "$(printf 'value a\nb')" ] &&
 # a script named after the options, and -- before it
 printf 'echo script $0 $1\n' > "$TMPH/s.sh" &&
 [ "$($SH "$TMPH/s.sh" one)" = "script $TMPH/s.sh one" ] &&

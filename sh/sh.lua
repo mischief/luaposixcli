@@ -308,8 +308,8 @@ local function complete_filename(prefix)
 		dir = "."
 		base = prefix
 	end
-	local entries = dirent.dir(dir)
-	if not entries then
+	local ok, entries = pcall(dirent.dir, dir)
+	if not ok or not entries then
 		return {}
 	end
 	local matches = {}
@@ -330,7 +330,9 @@ end
 local history = {}
 local history_pos = 1
 
-local function read_line()
+-- literal: the caller wants the line as typed, with no completion. A
+-- here-document body and a continuation line are text, not commands.
+local function read_line(literal)
 	if not interactive then
 		-- non-interactive: simple read
 		local buf = {}
@@ -418,6 +420,9 @@ local function read_line()
 				table.remove(buf)
 				redraw()
 			end
+		elseif b == 9 and literal then -- tab as text
+			buf[#buf + 1] = "\t"
+			redraw()
 		elseif b == 9 then -- tab
 			-- find current word (last space-delimited token)
 			local line = table.concat(buf)
@@ -440,8 +445,9 @@ local function read_line()
 				-- PATH
 				local path = env.get("PATH") or "/bin:/usr/bin"
 				for dir in path:gmatch("[^:]+") do
-					local entries = dirent.dir(dir)
-					if entries then
+					-- a PATH entry that is not there is not an error
+					local ok, entries = pcall(dirent.dir, dir)
+					if ok and entries then
 						for _, e in ipairs(entries) do
 							if e:sub(1, #prefix) == prefix and not seen[e] then
 								local full = dir .. "/" .. e
@@ -563,7 +569,7 @@ while true do
 	-- backslash continuation
 	while line:sub(-1) == "\\" do
 		line = line:sub(1, -2)
-		local cont = read_line()
+		local cont = read_line(true)
 		if not cont then
 			break
 		end
@@ -585,7 +591,7 @@ while true do
 				end
 				local body = {}
 				while true do
-					local hl = read_line()
+					local hl = read_line(true)
 					if not hl then break end
 					if strip then hl = hl:gsub("^\t+", "") end
 					if hl == delim then break end
@@ -602,7 +608,7 @@ while true do
 			if interactive then
 				unistd.write(2, "> ")
 			end
-			local more = read_line()
+			local more = read_line(true)
 			if not more then break end
 			text = text .. "\n" .. more
 		end
@@ -624,7 +630,7 @@ while true do
 		if interactive then
 			unistd.write(2, "> ")
 		end
-		local cont = readclosed(read_line())
+		local cont = readclosed(read_line(true))
 		if not cont then
 			break
 		end
